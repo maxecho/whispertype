@@ -1,0 +1,15 @@
+# рабочее окружение и сборка
+.venv/
+build/
+dist/
+*.egg-info/
+
+# python
+__pycache__/
+*.py[cod]
+
+# macos
+.DS_Store
+
+# промежуточное от генератора иконок
+whisperapp/assets/AppIcon.iconset/
