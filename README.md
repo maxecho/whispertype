@@ -95,9 +95,11 @@ Everything configurable lives in the menu:
 
 - **Hotkey** — seven presets, switched on the fly. Double-tap (toggle) or
   hold-to-talk, walkie-talkie style.
-- **Replacement dictionary** — `heard = written`. The highest-leverage setting
-  if your speech is full of names and jargon; unlike a prompt hint, it always
-  fires, and it preserves sentence-initial capitalization.
+- **Replacement dictionary** — `what it typed = what you meant`. The
+  highest-leverage setting if your speech is full of names and jargon. Note the
+  left side is the model's *output*, not the pronunciation: `Hype = Hybe`, not
+  `hipe = Hybe`. Unlike a prompt hint it always fires, and it preserves
+  sentence-initial capitalization.
 - **Recognition hint** — the same names as a soft prompt.
 - **Language**, **auto-paste**, **screen glow**, **live text**, **sounds**,
   **launch at login** — plus built-in help and a self-diagnosing
