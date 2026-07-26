@@ -18,6 +18,7 @@ class Recorder:
         self._stream = None
         self._lock = threading.Lock()
         self.level = 0.0  # текущая громкость 0..1, для индикатора
+        self.overflows = 0  # сколько раз система не успела отдать звук
 
     @property
     def active(self):
@@ -26,6 +27,8 @@ class Recorder:
     def _callback(self, indata, frames, time_info, status):
         if status:
             log.debug("Статус аудиопотока: %s", status)
+            if status.input_overflow:
+                self.overflows += 1
         block = indata.copy()
         peak = float(np.abs(block).max()) if block.size else 0.0
         with self._lock:
@@ -33,12 +36,21 @@ class Recorder:
             # плавный спад, чтобы индикатор не дёргался
             self.level = max(peak, self.level * 0.75)
 
+    def snapshot(self):
+        """Всё записанное на данный момент, не останавливая запись."""
+        with self._lock:
+            frames = list(self._frames)
+        if not frames:
+            return np.zeros(0, dtype=np.float32)
+        return np.concatenate(frames, axis=0).reshape(-1).astype(np.float32)
+
     def start(self):
         if self._stream is not None:
             return
         with self._lock:
             self._frames = []
             self.level = 0.0
+            self.overflows = 0
         self._stream = sd.InputStream(
             samplerate=SAMPLE_RATE,
             channels=1,

@@ -85,6 +85,8 @@ class WhisperApp(rumps.App):
         self._ax_ok = accessibility_ok()
         self._last_ax_check = 0.0
         self._last_look = None
+        self._session = None
+        self._last_feed = 0.0
 
         self._build_menu()
         self.hotkeys = HotkeyListener(self.cfg, self.on_hotkey, self.on_escape)
@@ -181,6 +183,9 @@ class WhisperApp(rumps.App):
             if self.state != RECORDING:
                 return
             self.recorder.discard()
+            if self._session is not None:
+                self._session.cancel()
+                self._session = None
             log.info("Запись отменена")
             self._set_state(IDLE, b.STATUS_READY)
             play(SOUND_STOP, self.cfg["sounds"])
@@ -192,20 +197,41 @@ class WhisperApp(rumps.App):
             log.exception("Микрофон не открылся")
             self._fail(b.MSG_TOO_QUIET)
             return
+        # длинную диктовку расшифровываем кусками прямо во время записи,
+        # чтобы после остановки ждать только хвост
+        self._session = self.transcriber.start_session() if self.transcriber.ready else None
+        self._last_feed = 0.0
         self._rec_started = time.monotonic()
         self._set_state(RECORDING)
         play(SOUND_START, self.cfg["sounds"])
 
+    def _feed_session(self):
+        """Раз в секунду отдаём сессии накопленный звук — она сама решит, пора ли резать."""
+        if self._session is None:
+            return
+        now = time.monotonic()
+        if now - self._last_feed < 1.0:
+            return
+        self._last_feed = now
+        try:
+            self._session.feed(self.recorder.snapshot())
+        except Exception:  # noqa: BLE001
+            log.exception("Сбой фоновой расшифровки — доделаю всё после остановки")
+            self._session = None
+
     def _stop_recording(self):
         audio = self.recorder.stop()
+        session, self._session = self._session, None
         self._set_state(WORKING, b.STATUS_WORKING)
         play(SOUND_STOP, self.cfg["sounds"])
-        threading.Thread(target=self._process, args=(audio,), daemon=True).start()
+        threading.Thread(target=self._process, args=(audio, session), daemon=True).start()
 
-    def _process(self, audio):
+    def _process(self, audio, session=None):
         try:
             seconds = audio.size / SAMPLE_RATE
             if seconds < float(self.cfg["min_seconds"]):
+                if session is not None:
+                    session.cancel()
                 log.info("Запись короче %.2f с — пропускаю", seconds)
                 self._set_state(IDLE, b.STATUS_READY)
                 return
@@ -213,11 +239,18 @@ class WhisperApp(rumps.App):
             # при запрещённом микрофоне macOS отдаёт ровные нули, а не ошибку;
             # без этой проверки это выглядело бы как «не разобрал ни слова»
             if (float(abs(audio).max()) if audio.size else 0.0) < 1e-4:
+                if session is not None:
+                    session.cancel()
                 self._fail(b.MSG_TOO_QUIET)
                 return
 
             started = time.monotonic()
-            text = self.transcriber.transcribe(audio)
+            if session is not None:
+                text = session.finish(audio)
+                if session.chunks_started:
+                    log.info("Кусков расшифровано во время записи: %d", session.chunks_started)
+            else:
+                text = self.transcriber.transcribe(audio)
             elapsed = time.monotonic() - started
 
             if not text:
@@ -376,6 +409,7 @@ class WhisperApp(rumps.App):
                 log.debug("Приветствие не показалось", exc_info=True)
 
         if self.state == RECORDING:
+            self._feed_session()
             if time.monotonic() - self._rec_started >= float(self.cfg["max_seconds"]):
                 log.info("Дошли до предела длины записи — останавливаю сам")
                 with self._state_lock:
