@@ -38,7 +38,10 @@ DEFAULTS = {
         "double_tap_window": 0.45,
         "cancel_on_escape": True,
     },
-    "model": "mlx-community/whisper-large-v3-turbo",
+    # q4: по скорости равна полной, но в 3.5 раза меньше в памяти — на машинах
+    # с 8 ГБ это главное: полную модель macOS выгружает в своп, и каждая
+    # диктовка после паузы начинается с многосекундной подгрузки весов с диска
+    "model": "mlx-community/whisper-large-v3-turbo-q4",
     "language": "ru",
     # Подсказка распознаванию: имена и термины, которые оно обычно путает.
     "initial_prompt": "",
@@ -79,6 +82,14 @@ def load_config():
     except Exception:
         logging.exception("Настройки повреждены, беру значения по умолчанию")
         return copy.deepcopy(DEFAULTS)
+
+    # миграция: старый вариант по умолчанию тихо меняем на новый;
+    # если модель выбирали руками — не трогаем
+    if user.get("model") == "mlx-community/whisper-large-v3-turbo":
+        user["model"] = DEFAULTS["model"]
+        cfg = _merge(DEFAULTS, user)
+        save_config(cfg)
+        return cfg
     return _merge(DEFAULTS, user)
 
 

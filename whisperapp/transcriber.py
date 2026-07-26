@@ -89,11 +89,28 @@ class Transcriber:
             temperature=0.0,
         )
 
+    def _pin_memory(self):
+        """Прибивает веса модели в памяти, чтобы macOS не выгружала их в своп.
+
+        Без этого на машинах с небольшой памятью каждая диктовка после паузы
+        начинается с подгрузки весов с диска — и «быстрая» модель ощущается
+        медленной. Прибиваем ровно столько, сколько занято после прогрева.
+        """
+        try:
+            import mlx.core as mx
+
+            active = mx.get_active_memory()
+            mx.set_wired_limit(active + 256 * 1024 * 1024)
+            log.info("Веса прибиты в памяти: %.0f МБ", active / 2**20)
+        except Exception:  # noqa: BLE001
+            log.warning("Не смог прибить веса в памяти — продолжаю без этого", exc_info=True)
+
     def warmup(self):
         """Прогревает модель на 0.5 с тишины, чтобы первая реальная диктовка не тормозила."""
         try:
             with self._lock:
                 self._run(np.zeros(SAMPLE_RATE // 2, dtype=np.float32))
+            self._pin_memory()
             self.ready = True
             self.error = None
             log.info("Модель готова: %s", self.model)
