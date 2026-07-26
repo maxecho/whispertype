@@ -12,6 +12,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from whisperapp.recorder import LEVEL_FLOOR, normalized_level  # noqa: E402
 from whisperapp.overlay import (  # noqa: E402
     CAPTION_MAX_CHARS,
+    CAPTION_MAX_LINES,
+    fit_to_lines,
     GLOW_WIDTH_CALM,
     GLOW_WIDTH_LOUD,
     smooth_level,
@@ -57,7 +59,40 @@ check("цель достигается", abs(run(0.0, [0.5] * 200)[-1] - 0.5) < 
 # --- размеры ---------------------------------------------------------------
 
 check("громкая рамка заметно толще тихой", GLOW_WIDTH_LOUD > GLOW_WIDTH_CALM * 2)
-check("живой текст ограничен", CAPTION_MAX_CHARS <= 200)
+# Лимит символов — грубая отсечка перед подгонкой; настоящую границу держит
+# укладка в три строки, поэтому проверяем именно её.
+check("отсечка по символам разумна", 150 <= CAPTION_MAX_CHARS <= 500)
+
+# --- подгонка живого текста под плашку -------------------------------------
+# Поддельный измеритель: строка в 30 знаков, высота строки 20.
+
+def lines(text):
+    return ((len(text) - 1) // 30 + 1) * 20 if text else 0
+
+
+THREE = 20 * CAPTION_MAX_LINES
+short = "привет"
+long = " ".join(f"слово{i}" for i in range(40))
+
+check("короткий текст не трогаем", fit_to_lines(short, lines, THREE) == short)
+check("пустой текст остаётся пустым", fit_to_lines("", lines, THREE) == "")
+check("пробелы по краям убираются", fit_to_lines("  привет  ", lines, THREE) == "привет")
+
+fitted = fit_to_lines(long, lines, THREE)
+check("длинный текст ужимается до трёх строк", lines(fitted) <= THREE, f"{lines(fitted)//20} стр.")
+check("обрезано начало, а не конец", fitted.startswith("…") and fitted.endswith("слово39"))
+check(
+    "сохранены последние слова",
+    "слово38" in fitted and "слово39" in fitted,
+)
+check("режем по словам, не по буквам", "слов о" not in fitted)
+check(
+    "любая длина укладывается в три строки",
+    all(lines(fit_to_lines("слово " * n, lines, THREE)) <= THREE for n in (1, 5, 20, 100)),
+)
+
+huge = "а" * 500  # одно слово длиннее любой плашки
+check("текст без пробелов не роняет подгонку", isinstance(fit_to_lines(huge, lines, THREE), str))
 
 # --- нормировка громкости --------------------------------------------------
 # Живой микрофон не выдаёт пиков около единицы, поэтому индикатор считает

@@ -12,6 +12,7 @@
 import logging
 
 from AppKit import (
+    NSAnimationContext,
     NSAttributedString,
     NSBackingStoreBuffered,
     NSBezierPath,
@@ -24,12 +25,17 @@ from AppKit import (
     NSImageScaleAxesIndependently,
     NSImageView,
     NSInsetRect,
-    NSLineBreakByTruncatingHead,
+    NSFontAttributeName,
+    NSLineBreakByWordWrapping,
     NSMakeRect,
+    NSMakeSize,
     NSScreen,
     NSScreenSaverWindowLevel,
     NSTextField,
+    NSStringDrawingUsesLineFragmentOrigin,
     NSView,
+    NSViewHeightSizable,
+    NSViewWidthSizable,
     NSVisualEffectBlendingModeBehindWindow,
     NSVisualEffectMaterialHUDWindow,
     NSVisualEffectStateActive,
@@ -65,10 +71,35 @@ IMAGE_SCALE = 0.5
 ATTACK = 0.30
 RELEASE = 0.08
 
-CAPTION_MAX_CHARS = 140
-CAPTION_HEIGHT = 40.0
+# Плашка живёт как пузырёк в мессенджере: подгоняется под текст по ширине,
+# дальше переносит строки и растёт в высоту, но не больше трёх строк —
+# читать простыню во время речи всё равно невозможно.
+CAPTION_MAX_CHARS = 300
+CAPTION_MAX_LINES = 3
+CAPTION_MIN_WIDTH = 170.0
 CAPTION_FONT_SIZE = 18.0
-CAPTION_PADDING = 22.0
+CAPTION_PADDING_X = 22.0
+CAPTION_PADDING_Y = 11.0
+CAPTION_BOTTOM = GLOW_WIDTH_LOUD + 14
+CAPTION_GROW = 0.22   # за сколько секунд плашка меняет размер
+
+
+def fit_to_lines(text, measure, max_height):
+    """Отрезает начало по словам, пока текст не уложится в отведённую высоту.
+
+    Обрезаем именно начало: во время диктовки интересны последние сказанные
+    слова. Отброшенное обозначаем многоточием, чтобы было видно, что выше
+    что-то осталось.
+    """
+    text = (text or "").strip()
+    if not text or measure(text) <= max_height:
+        return text
+    words = text.split(" ")
+    for start in range(1, len(words)):
+        candidate = "… " + " ".join(words[start:])
+        if measure(candidate) <= max_height:
+            return candidate
+    return "… " + words[-1]
 
 
 def smooth_level(current, target, attack=ATTACK, release=RELEASE):
@@ -169,7 +200,7 @@ class ScreenGlow:
             container.addSubview_(loud)
             container.addSubview_(calm)
 
-            pill, caption = self._make_caption(width)
+            pill, caption, max_width, screen_width = self._make_caption(width)
             container.addSubview_(pill)
 
             window.setContentView_(container)
@@ -180,7 +211,7 @@ class ScreenGlow:
             self._windows.append(window)
             self._calm_views.append(calm)
             self._loud_views.append(loud)
-            self._pills.append(pill)
+            self._pills.append((pill, max_width, screen_width))
             self._captions.append(caption)
         self._screens = len(self._windows)
 
@@ -197,29 +228,29 @@ class ScreenGlow:
         Белый текст с тенью поверх произвольного фона не читается — под ним
         может оказаться что угодно. Поэтому подложка с размытием.
         """
-        width = min(screen_width * 0.55, 760.0)
+        max_width = min(screen_width * 0.55, 760.0)
         pill = NSVisualEffectView.alloc().initWithFrame_(
             NSMakeRect(
-                (screen_width - width) / 2,
-                GLOW_WIDTH_LOUD + 14,
-                width,
-                CAPTION_HEIGHT,
+                (screen_width - CAPTION_MIN_WIDTH) / 2,
+                CAPTION_BOTTOM,
+                CAPTION_MIN_WIDTH,
+                CAPTION_FONT_SIZE * 1.45 + CAPTION_PADDING_Y * 2,
             )
         )
         pill.setMaterial_(NSVisualEffectMaterialHUDWindow)
         pill.setBlendingMode_(NSVisualEffectBlendingModeBehindWindow)
         pill.setState_(NSVisualEffectStateActive)
         pill.setWantsLayer_(True)
-        pill.layer().setCornerRadius_(CAPTION_HEIGHT / 2)
+        pill.layer().setCornerRadius_(14.0)
         pill.layer().setMasksToBounds_(True)
         pill.setHidden_(True)  # пока нечего показывать — плашки нет
 
         field = NSTextField.alloc().initWithFrame_(
             NSMakeRect(
-                CAPTION_PADDING,
-                (CAPTION_HEIGHT - CAPTION_FONT_SIZE * 1.5) / 2,
-                width - CAPTION_PADDING * 2,
-                CAPTION_FONT_SIZE * 1.5,
+                CAPTION_PADDING_X,
+                CAPTION_PADDING_Y,
+                CAPTION_MIN_WIDTH - CAPTION_PADDING_X * 2,
+                CAPTION_FONT_SIZE * 1.45,
             )
         )
         field.setBezeled_(False)
@@ -229,11 +260,15 @@ class ScreenGlow:
         field.setAlignment_(1)  # по центру
         field.setFont_(NSFont.systemFontOfSize_(CAPTION_FONT_SIZE))
         field.setTextColor_(NSColor.whiteColor())
-        # обрезаем начало, а не конец: интересны последние сказанные слова
-        field.cell().setLineBreakMode_(NSLineBreakByTruncatingHead)
+        field.setUsesSingleLineMode_(False)
+        field.cell().setWraps_(True)
+        field.cell().setLineBreakMode_(NSLineBreakByWordWrapping)
+        # поле тянется за плашкой, чтобы не двигать его отдельной анимацией
+        field.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
         field.setStringValue_("")
         pill.addSubview_(field)
-        return pill, field
+        pill.setFrameSize_(NSMakeSize(CAPTION_MIN_WIDTH, CAPTION_FONT_SIZE * 1.45 + CAPTION_PADDING_Y * 2))
+        return pill, field, max_width, screen_width
 
     def _teardown(self):
         for window in self._windows:
@@ -291,17 +326,58 @@ class ScreenGlow:
         for view in self._loud_views:
             view.setAlphaValue_(loud_alpha)
 
+    def _measure(self, text, width):
+        """Высота текста, если разложить его по строкам в заданной ширине."""
+        attributed = NSAttributedString.alloc().initWithString_attributes_(
+            text, {NSFontAttributeName: NSFont.systemFontOfSize_(CAPTION_FONT_SIZE)}
+        )
+        return attributed.boundingRectWithSize_options_(
+            NSMakeSize(width, 10_000), NSStringDrawingUsesLineFragmentOrigin
+        ).size
+
     def set_caption(self, text):
-        """Живой текст под рамкой. Пустая строка убирает подпись."""
+        """Живой текст под рамкой. Плашка подгоняется под него, как пузырёк чата."""
         if not self._visible or text == self._caption_text:
             return
         self._caption_text = text
         shown = (text or "").strip()
         if len(shown) > CAPTION_MAX_CHARS:
             shown = shown[-CAPTION_MAX_CHARS:]
-        for pill, caption in zip(self._pills, self._captions):
-            caption.setStringValue_(shown)
-            pill.setHidden_(not shown)  # пустая плашка на экране не нужна
+
+        for (pill, max_width, screen_width), caption in zip(self._pills, self._captions):
+            if not shown:
+                pill.setHidden_(True)  # пустая плашка на экране не нужна
+                caption.setStringValue_("")
+                continue
+
+            text_width = max_width - CAPTION_PADDING_X * 2
+            line_height = self._measure("Ap", text_width).height
+            fitted = fit_to_lines(
+                shown,
+                lambda candidate: self._measure(candidate, text_width).height,
+                line_height * CAPTION_MAX_LINES,
+            )
+            size = self._measure(fitted, text_width)
+
+            width = min(
+                max_width,
+                max(CAPTION_MIN_WIDTH, size.width + CAPTION_PADDING_X * 2 + 2),
+            )
+            height = size.height + CAPTION_PADDING_Y * 2
+            frame = NSMakeRect(
+                (screen_width - width) / 2, CAPTION_BOTTOM, width, height
+            )
+
+            caption.setStringValue_(fitted)
+            if pill.isHidden():
+                # первая фраза: появляемся сразу нужного размера, без рывка
+                pill.setFrame_(frame)
+                pill.setHidden_(False)
+            else:
+                NSAnimationContext.beginGrouping()
+                NSAnimationContext.currentContext().setDuration_(CAPTION_GROW)
+                pill.animator().setFrame_(frame)
+                NSAnimationContext.endGrouping()
 
 
 def is_available():

@@ -88,7 +88,8 @@ Changed your mind mid-sentence? Press **Esc** — the recording is discarded.
 
 While recording, a gradient frame glows around the screen edges, breathing with
 your voice — you can see you're being heard without looking away. Recognized
-text appears beneath it as you speak.
+text appears beneath it in a pill that sizes itself to the content like a chat
+bubble: it grows wider, then wraps, capped at three lines.
 
 Everything configurable lives in the menu:
 
