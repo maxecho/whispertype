@@ -176,7 +176,7 @@ synthesized with the system TTS voice, hotkey events are injected directly,
 and UI strings are checked for leaked absolute paths:
 
 ```bash
-for t in test_texts test_words test_hotkey test_pipeline test_streaming; do
+for t in test_texts test_words test_overlay test_hotkey test_pipeline test_streaming; do
   .venv/bin/python $t.py || break
 done
 ```
@@ -194,6 +194,14 @@ audio is cut at the quietest 200 ms stretch of the last few seconds (so words
 are never split), transcribed in a background thread, and the next chunk
 receives the tail of the previous text as a prompt for continuity. After you
 stop, only the tail remains.
+
+**The glow breathes through opacity, never redraws.** Two pre-rendered images —
+a thin frame and a wide one — sit on top of each other; volume only changes
+their alpha, so the contour visibly grows without repainting the whole screen
+20 times a second. Alpha is animated on the *layers*, not the window: animating
+the window would make the live caption flicker along with the glow and become
+unreadable. The level is smoothed with separate attack and release rates —
+equal rates make the contour stutter between syllables.
 
 **Listening to keys and pressing keys are two different permissions.**
 `AXIsProcessTrusted()` only covers the latter. Since macOS 10.15 a keyboard
