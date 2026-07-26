@@ -1,6 +1,6 @@
-"""Настройки Whisper.
+"""Настройки WhisperType.
 
-Файл лежит в ~/Library/Application Support/Whisper/settings.json, но человеку
+Файл лежит в ~/Library/Application Support/WhisperType/settings.json, но человеку
 туда лезть не нужно: всё, что стоит менять, есть в меню программы.
 """
 
@@ -15,8 +15,14 @@ from .branding import APP_NAME
 SUPPORT_DIR = pathlib.Path.home() / "Library" / "Application Support" / APP_NAME
 CONFIG_PATH = SUPPORT_DIR / "settings.json"
 LOG_DIR = pathlib.Path.home() / "Library" / "Logs" / APP_NAME
-LOG_PATH = LOG_DIR / "whisper.log"
+LOG_PATH = LOG_DIR / f"{APP_NAME.lower()}.log"
 FIRST_RUN_MARKER = SUPPORT_DIR / ".welcomed"
+
+# при переименовании из «Whisper» подхватываем старые настройки, чтобы не
+# потерять выбранный хоткей и не показывать приветствие заново
+_LEGACY_SUPPORT = pathlib.Path.home() / "Library" / "Application Support" / "Whisper"
+if _LEGACY_SUPPORT.exists() and not SUPPORT_DIR.exists():
+    _LEGACY_SUPPORT.rename(SUPPORT_DIR)
 
 # Готовые варианты горячей клавиши для меню. Первый — по умолчанию.
 # Двойное нажатие ⌥ намеренно не предлагаем: его занимает Claude.

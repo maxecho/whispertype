@@ -26,7 +26,7 @@ SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_
 def parent_app_path():
     """Что именно macOS показывает в списке «Универсальный доступ».
 
-    Из собранного Whisper.app это сам бандл. При запуске из исходников
+    Из собранного WhisperType.app это сам бандл. При запуске из исходников
     разрешение достаётся фреймворковому Python.app: venv-питон при старте
     перезапускается в него, а не остаётся .venv/bin/python.
     """

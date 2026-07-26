@@ -1,176 +1,187 @@
 <div align="center">
 
-<img src="whisperapp/assets/icon-512.png" width="128" alt="Whisper">
+<img src="docs/hero.png" alt="WhisperType — dictation that never leaves your Mac" width="820">
 
-# Whisper
+[![macOS 13+](https://img.shields.io/badge/macOS-13%2B-000000?logo=apple&logoColor=white)](#requirements)
+[![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-M1%E2%80%93M4-8b5cf6)](#requirements)
+[![Powered by MLX](https://img.shields.io/badge/powered%20by-MLX%20Whisper-6366f1)](https://github.com/ml-explore/mlx-examples)
+[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e)](LICENSE)
 
-**Диктовка, которая не покидает ваш мак**
+**Double-tap a key. Speak. Watch the text appear wherever your cursor is.**
 
-<img src="docs/preview.png" width="620" alt="Иконка и значок в строке меню">
+[Русская документация →](README.ru.md)
 
 </div>
 
-Нажали клавишу — сказали — текст появился там, где стоял курсор.
-Распознавание целиком считается на вашем маке, на чипе Apple: запись не уходит
-в сеть, не сохраняется на диск и живёт в оперативной памяти несколько секунд.
+---
 
-Нужен **Mac на чипе Apple** (M1 и новее) и macOS 13 или свежее.
+WhisperType is a tiny menu-bar app that turns your voice into text in any input
+field — chat, editor, browser, terminal. Speech recognition runs **entirely
+on-device** on the Apple GPU via
+[MLX Whisper](https://github.com/ml-explore/mlx-examples): audio never touches
+the network, is never written to disk, and lives in RAM only for the few
+seconds it takes to transcribe.
 
-## Установка
+## Why another dictation app?
+
+- **Private by physics, not by policy.** No account, no API key, no cloud.
+  Unplug your network cable — dictation still works.
+- **Fast where it matters.** A short phrase transcribes in ~1.3 s. Long
+  dictations are transcribed *while you are still speaking* — chunks are cut at
+  natural pauses and processed in the background, so a full minute of speech
+  appears ~1.3 s after you stop, not 5+.
+- **Works everywhere.** Text is inserted through the clipboard with a synthetic
+  ⌘V — the only method that survives any app, any keyboard layout, and
+  non-Latin scripts. Your previous clipboard is restored automatically.
+- **Stays out of the way.** One menu-bar icon. Double-tap right ⌘ to start,
+  double-tap to stop, Esc to cancel. No windows, no Dock icon.
+
+## Requirements
+
+- Mac with Apple Silicon (M1 or newer) — recognition runs on the Apple GPU
+- macOS 13+
+- [Homebrew](https://brew.sh) (the installer uses it to fetch Python if needed)
+- ~1 GB of disk: the recognition model (~0.5 GB, downloaded once) + Python env
+
+## Install
 
 ```bash
+git clone https://github.com/maxecho/whispertype.git
+cd whispertype
 ./install.sh
 ```
 
-Скрипт соберёт `Whisper.app`, положит его в «Программы», скачает распознавание
-(~1.6 ГБ, один раз) и включит запуск при входе в систему. Первый прогон занимает
-несколько минут.
+The script builds `WhisperType.app`, puts it into /Applications, downloads the
+model and enables launch-at-login. First run takes a few minutes.
 
-Дальше программа сама попросит два разрешения:
+macOS will ask for two one-time permissions, and the app walks you through
+both: **Accessibility** (to catch the hotkey and type for you) and
+**Microphone**. No restarts needed — the app picks the permission up within
+seconds of you granting it.
 
-- **нажимать клавиши за вас** — без этого не сработает ни горячая клавиша, ни
-  вставка текста. Whisper откроет нужную панель настроек, останется включить
-  галочку. Перезапускать ничего не нужно: разрешение подхватится за пару секунд;
-- **микрофон** — обычное системное окно при первом запуске.
+## Use
 
-## Как пользоваться
+1. Put the cursor where you want the text.
+2. **Double-tap right ⌘** — the menu-bar wave turns red, a timer starts.
+3. Speak.
+4. **Double-tap right ⌘ again** — the text appears by itself.
 
-1. Поставьте курсор туда, где хотите видеть текст.
-2. **Дважды нажмите ⌘ справа** — значок в строке меню станет красным.
-3. Говорите.
-4. **Дважды нажмите ⌘ справа ещё раз** — текст появится сам.
+Changed your mind mid-sentence? Press **Esc** — the recording is discarded.
 
-Передумали посреди фразы — **Esc**, запись просто исчезнет.
-
-Значок в строке меню показывает, что происходит:
-
-| Значок | Что значит |
+| Menu-bar icon | Meaning |
 |---|---|
-| волна | ждёт |
-| красная волна и таймер | записывает |
-| волна и точки | разбирает сказанное |
-| волна и `!` | нет разрешения или что-то не вышло |
+| wave | ready |
+| red wave + timer | recording |
+| wave + dots | transcribing |
+| wave + `!` | missing permission / something failed |
 
-## Настройки
+Everything configurable lives in the menu: five hotkey presets (switched
+on the fly), language (Russian / English / auto-detect), auto-paste toggle,
+sounds, launch at login — plus built-in help and a self-diagnosing
+"something's wrong" dialog.
 
-Всё, что стоит менять, есть в меню самой программы:
+> **Note:** the app UI is currently Russian-only. Recognition itself handles
+> [90+ languages](https://github.com/openai/whisper#available-models-and-languages) —
+> pick yours in the Language menu.
 
-- **Горячая клавиша** — пять готовых вариантов, переключаются на лету.
-- **Язык** — русский, английский или определять самому.
-- **Вставлять сразу в поле** — если выключить, текст просто ложится в буфер обмена.
-- **Звук в начале и в конце**.
-- **Запускать при входе**.
+### Power-user settings
 
-Там же — «Как этим пользоваться» и «Что-то не работает» с живой проверкой
-разрешений, микрофона и распознавания.
+`~/Library/Application Support/WhisperType/settings.json` (picked up on
+restart):
 
-### Тонкие настройки
+- `initial_prompt` — comma-separated names and jargon the model tends to
+  mangle: company names, colleagues, domain terms. Dramatically improves
+  recognition of your vocabulary.
+- `model` — default is `mlx-community/whisper-large-v3-turbo-q4`. On 16+ GB
+  machines you may switch to the full `mlx-community/whisper-large-v3-turbo`,
+  though speed and accuracy are practically identical.
+- `hotkey.combo` — any modifier chord (e.g. `"<ctrl>+<alt>+d"`) if you prefer
+  a combo over double-tap.
 
-`~/Library/Application Support/Whisper/settings.json`, изменения подхватываются
-при следующем запуске. Оттуда полезны два ключа:
+## Speed & footprint
 
-- `initial_prompt` — подсказка распознаванию с именами и терминами, которые оно
-  путает: названия компаний, фамилии коллег, профессиональный жаргон. Просто
-  перечислите их через запятую.
-- `model` — по умолчанию `mlx-community/whisper-large-v3-turbo-q4`; на машинах
-  с 16+ ГБ памяти можно вернуть полную `mlx-community/whisper-large-v3-turbo`,
-  хотя разницы в скорости и точности практически нет.
+| | |
+|---|---|
+| Short phrase (5 s) | ~1.3 s |
+| One minute of speech | ~1.3 s after you stop (streamed during recording) |
+| Idle CPU | ~0.1 % |
+| RAM | ~0.5 GB, wired |
 
-## Что делать, если не работает
+The quantized q4 model is the default *not* for speed — benchmarks
+(`tools/bench.py`) show it ties the full model — but for memory. On an 8 GB
+Mac the 2.2 GB full model gets swapped out between dictations, and every
+dictation after a pause would start with seconds of reloading weights from
+disk. The q4 weights are 4× smaller and additionally **wired into memory**
+(`mx.set_wired_limit`), so dictation always starts hot.
 
-Сначала — пункт «Что-то не работает» в меню программы: он проверяет всё сам
-и предлагает починку.
+## Troubleshooting
 
-Если хочется подробностей:
+Start with the **"Что-то не работает"** menu item — it checks permissions,
+microphone and the model, and offers the fix.
+
+CLI diagnostics:
 
 ```bash
-/Applications/Whisper.app/Contents/MacOS/Whisper doctor
+/Applications/WhisperType.app/Contents/MacOS/WhisperType doctor
 ```
 
-Ещё есть `tapcheck` (программа сама нажимает клавишу и проверяет, дошло ли),
-`devices` (список микрофонов) и `selftest 5` (записать 5 секунд и показать
-расшифровку).
+Also available: `tapcheck` (the app presses its own hotkey and verifies the
+event arrives), `devices` (list microphones), `selftest 5` (record 5 seconds
+and print the transcript).
 
-**Важно:** запущенный из терминала `doctor` покажет, что разрешения нет, даже
-когда оно есть. Так работает macOS: у программы, запущенной из терминала,
-права считаются по терминалу, а не по ней самой. Настоящую проверку делает пункт
-меню «Что-то не работает».
+**Caveat:** `doctor` run from a terminal will report "no accessibility
+permission" even when it's granted — macOS attributes permissions to the
+terminal, not the app. The menu-item check is the authoritative one.
 
-**После `brew upgrade python@3.12`** соберите приложение заново — `./install.sh`.
+After `brew upgrade python@3.x`, rebuild: `./install.sh`.
 
-## Скорость и ресурсы
+## How it's built
 
-Короткая фраза расшифровывается за ~1.3 секунды. Длинные диктовки режутся по
-паузам и расшифровываются прямо во время записи, поэтому ожидание после
-остановки не растёт с длиной: минута речи — те же ~1.3 секунды (без этого было
-бы ~5).
-
-По умолчанию стоит сжатая модель (~0.5 ГБ в памяти): по скорости и качеству она
-не отличается от полной, но её вчетверо меньший вес — страховка от главного
-источника «внезапной медленности». На машинах с 8 ГБ памяти macOS выгружает
-неиспользуемые гигабайты в своп, и каждая диктовка после паузы начиналась бы
-с многосекундной подгрузки модели с диска. Вдобавок веса прибиваются в памяти
-(`wired`), чтобы система не трогала их вовсе. В простое — около 0.1% процессора.
-
-## Удаление
-
-```bash
-./uninstall.sh
-```
-
-## Как устроено
-
-| Файл | Что делает |
+| File | Role |
 |---|---|
-| `whisperapp/branding.py` | название, цвета и все тексты, которые видит человек |
-| `whisperapp/hotkey.py` | перехват горячей клавиши через CGEventTap |
-| `whisperapp/recorder.py` | запись с микрофона в память, 16 кГц моно |
-| `whisperapp/transcriber.py` | распознавание на MLX и отсев выдумок на тишине |
-| `whisperapp/inserter.py` | буфер обмена и синтетическое ⌘V |
-| `whisperapp/app.py` | значок в строке меню и состояния программы |
-| `whisperapp/autostart.py` | запуск при входе в систему |
-| `tools/make_icons.py` | рисует иконки из кода |
-| `setup.py` | сборка `Whisper.app` |
+| `whisperapp/branding.py` | name, colors, every user-facing string |
+| `whisperapp/hotkey.py` | global hotkey via a raw CGEventTap |
+| `whisperapp/recorder.py` | 16 kHz mono capture into RAM |
+| `whisperapp/transcriber.py` | MLX Whisper + hallucination filter + streaming chunker |
+| `whisperapp/inserter.py` | clipboard + synthetic ⌘V |
+| `whisperapp/app.py` | menu-bar UI and state machine |
+| `whisperapp/autostart.py` | LaunchAgent |
+| `tools/make_icons.py` | the whole identity, generated from code |
 
-Тесты — `test_hotkey.py` (распознавание клавиши, без клавиатуры и разрешений),
-`test_pipeline.py` (расшифровка синтезированной речи, без микрофона) и
-`test_streaming.py` (расшифровка кусками: корректность склейки, задержка хвоста,
-отсутствие потерь звука):
+Tests run without a microphone, keyboard or permissions — speech is
+synthesized with the system TTS voice, hotkey events are injected directly:
 
 ```bash
 .venv/bin/python test_hotkey.py && .venv/bin/python test_pipeline.py && .venv/bin/python test_streaming.py
 ```
 
-### Решения, которые стоит помнить
+### Engineering notes (learned the hard way)
 
-**Длинные диктовки расшифровываются кусками во время записи.** Каждые ~22
-секунды накопленный звук режется в ближайшей паузе (ищется самый тихий участок,
-чтобы не резать по слову) и уходит в фоновый поток; следующий кусок получает
-хвост предыдущего текста как подсказку, чтобы модель продолжала мысль. После
-остановки остаётся только хвост.
+**The hotkey listener is a raw CGEventTap, not pynput.** On macOS 26, pynput
+queries the keyboard layout via HIToolbox from a background thread; HIToolbox
+now demands the main thread and kills the process with SIGTRAP on the first
+keypress. Key *codes* are layout-independent, so the query isn't needed at
+all. The tap is listen-only — normal shortcuts keep working.
 
-**Сжатая модель выбрана не ради скорости, а ради памяти.** По чистому бенчмарку
-(`tools/bench.py`) q4 не быстрее полной — накладные на распаковку весов съедают
-выигрыш. Но она вчетверо меньше, а на тесной памяти именно выгрузка модели в
-своп, а не математика, делает диктовку медленной. Веса дополнительно прибиты
-через `mx.set_wired_limit`.
+**Long dictations are chunked while recording.** Every ~22 s the accumulated
+audio is cut at the quietest 200 ms stretch of the last few seconds (so words
+are never split), transcribed in a background thread, and the next chunk
+receives the tail of the previous text as a prompt for continuity. After you
+stop, only the tail remains.
 
-**Кодировать окно короче 30 секунд нельзя.** Напрашивающийся способ ускорить
-короткие фразы — не дополнять их тишиной до 30 секунд, а укоротить позиционные
-эмбеддинги энкодера под фактическую длину. Проверено: whisper-turbo на
-нестандартных окнах зацикливается («Да. Да. Да…») и галлюцинирует на шуме,
-причём и с таймстемпами, и без. Модель обучена только на 30-секундных окнах;
-не пытайтесь снова.
+**Don't try windows shorter than 30 s.** The tempting optimization — slicing
+the encoder's positional embeddings to the actual clip length instead of
+padding to 30 s — makes whisper-turbo loop and hallucinate on noise, with and
+without timestamps. The model only ever saw 30-second windows in training.
+Benchmarked, confirmed, abandoned.
 
-**Перехват клавиш написан на голом CGEventTap, без pynput.** pynput на macOS 26
-спрашивает у HIToolbox текущую раскладку из фонового потока, а тот с некоторых
-пор требует главный, — и роняет процесс по SIGTRAP на первом же нажатии. Нам
-раскладка не нужна: коды клавиш от неё не зависят. События мы не съедаем
-(listen-only), поэтому обычные шорткаты продолжают работать.
+## Uninstall
 
-**Вставка идёт через буфер обмена и ⌘V**, а не посимвольным набором: это
-единственный способ, надёжно работающий с кириллицей в любой раскладке и в любом
-приложении. Прежнее содержимое буфера возвращается через полсекунды.
+```bash
+./uninstall.sh
+```
 
-**Двойное нажатие ⌥ занято Claude** (быстрый ввод), а Caps Lock — его же
-диктовкой. Поэтому по умолчанию выбран ⌘ справа.
+## License
+
+[MIT](LICENSE). Built on [MLX](https://github.com/ml-explore/mlx) and
+[Whisper](https://github.com/openai/whisper) — thanks to both teams.

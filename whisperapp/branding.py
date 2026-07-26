@@ -6,10 +6,11 @@
 
 import pathlib
 
-APP_NAME = "Whisper"
-VERSION = "1.0"
-BUNDLE_ID = "local.whisper.dictation"
+APP_NAME = "WhisperType"
+VERSION = "1.1"
+BUNDLE_ID = "io.github.maxecho.whispertype"
 TAGLINE = "Диктовка, которая не покидает ваш мак"
+TAGLINE_EN = "Dictation that never leaves your Mac"
 
 ASSETS = pathlib.Path(__file__).resolve().parent / "assets"
 ICON_PNG = ASSETS / "icon-512.png"

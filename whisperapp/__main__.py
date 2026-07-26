@@ -1,4 +1,4 @@
-"""Запуск Whisper из командной строки.
+"""Запуск WhisperType из командной строки.
 
     python -m whisperapp              — запустить программу
     python -m whisperapp doctor       — проверить, всё ли на месте
@@ -8,7 +8,7 @@
 
 То же самое умеет и собранное приложение:
 
-    /Applications/Whisper.app/Contents/MacOS/Whisper doctor
+    /Applications/WhisperType.app/Contents/MacOS/WhisperType doctor
 """
 
 import sys

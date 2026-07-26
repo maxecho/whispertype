@@ -1,4 +1,4 @@
-"""Запуск Whisper при входе в систему (LaunchAgent)."""
+"""Запуск WhisperType при входе в систему (LaunchAgent)."""
 
 import logging
 import pathlib
@@ -40,7 +40,7 @@ def project_dir():
 
 
 def bundle_executable():
-    """Исполняемый файл внутри Whisper.app, если программа собрана как приложение."""
+    """Исполняемый файл внутри WhisperType.app, если программа собрана как приложение."""
     try:
         from Foundation import NSBundle
 

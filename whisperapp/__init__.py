@@ -1,4 +1,4 @@
-"""Whisper — локальная голосовая диктовка для macOS на чипах Apple."""
+"""WhisperType — локальная голосовая диктовка для macOS на чипах Apple."""
 
 import os
 

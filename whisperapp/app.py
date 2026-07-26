@@ -1,4 +1,4 @@
-"""Whisper — значок в строке меню и вся логика «нажал → сказал → появился текст»."""
+"""WhisperType — значок в строке меню и вся логика «нажал → сказал → появился текст»."""
 
 import logging
 import subprocess
@@ -338,7 +338,7 @@ class WhisperApp(rumps.App):
     # ---------------------------------------------------------- разрешения
 
     def _ask_accessibility(self):
-        request_accessibility()  # добавляет Whisper в системный список
+        request_accessibility()  # добавляет WhisperType в системный список
         if self._alert(
             "Остался один шаг",
             b.no_access_text(parent_app_path()),

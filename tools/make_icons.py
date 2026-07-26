@@ -1,4 +1,4 @@
-"""Генератор иконок Whisper.
+"""Генератор иконок WhisperType.
 
 Рисует всё из кода, чтобы айдентику можно было переделать одной командой:
 
@@ -117,6 +117,43 @@ def menubar_icon(color, size=44):
     return canvas.resize((size, size), Image.LANCZOS)
 
 
+def hero_banner(width=1280, height=380):
+    """Баннер для README: иконка, имя и слоган на тёмном градиенте."""
+    from PIL import ImageFont
+
+    ss = 2
+    W, H = width * ss, height * ss
+    ramp = np.linspace(0.0, 1.0, W)[None, :]
+    top = np.array((30, 27, 63))       # глубокий индиго
+    bottom = np.array((76, 46, 131))   # фиолетовый
+    rgb = np.stack(
+        [top[i] * (1 - ramp) + bottom[i] * ramp for i in range(3)], axis=-1
+    ) * np.ones((H, 1, 1))
+    banner = Image.fromarray(rgb.astype(np.uint8), mode="RGB").convert("RGBA")
+
+    icon = app_icon(size=H - 96 * ss)
+    banner.paste(icon, (110 * ss, (H - icon.size[1]) // 2), icon)
+
+    def font(size, bold=True):
+        for path, index in (
+            ("/System/Library/Fonts/HelveticaNeue.ttc", 1 if bold else 0),
+            ("/System/Library/Fonts/Helvetica.ttc", 1 if bold else 0),
+        ):
+            try:
+                return ImageFont.truetype(path, size, index=index)
+            except Exception:  # noqa: BLE001
+                continue
+        return ImageFont.load_default(size)
+
+    draw = ImageDraw.Draw(banner)
+    text_x = 110 * ss + icon.size[0] + 90 * ss
+    draw.text((text_x, H * 0.30), "WhisperType", font=font(86 * ss),
+              fill=(255, 255, 255, 255), anchor="lm")
+    draw.text((text_x, H * 0.30 + 92 * ss), "Dictation that never leaves your Mac",
+              font=font(34 * ss, bold=False), fill=(255, 255, 255, 200), anchor="lm")
+    return banner.resize((width, height), Image.LANCZOS).convert("RGB")
+
+
 def build_icns(master, small, out):
     """Собирает .icns из набора размеров через системный iconutil.
 
@@ -147,6 +184,10 @@ def main():
     # чёрный + альфа: macOS сам перекрасит под светлую и тёмную строку меню
     menubar_icon((0, 0, 0, 255)).save(ASSETS / "menubar.png")
     menubar_icon(RECORDING_RED + (255,)).save(ASSETS / "menubar-rec.png")
+
+    docs = ROOT / "docs"
+    docs.mkdir(exist_ok=True)
+    hero_banner().save(docs / "hero.png")
 
     for item in sorted(ASSETS.iterdir()):
         print(f"  {item.name:20} {item.stat().st_size / 1024:6.1f} КБ")
