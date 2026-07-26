@@ -319,7 +319,13 @@ class WhisperApp(rumps.App):
         except Exception:  # noqa: BLE001
             mic_ok = False
         message = b.trouble_text(
-            describe(self.cfg), has_access, mic_ok, self.transcriber.ready, LOG_PATH
+            describe(self.cfg),
+            has_access,
+            mic_ok,
+            self.transcriber.ready,
+            LOG_PATH,
+            # без разрешения кнопки журнала в диалоге нет — не обещаем её в тексте
+            log_button=has_access,
         )
         if not has_access:
             if self._alert(b.MENU_TROUBLE, message, ok="Открыть настройки", cancel="Закрыть"):

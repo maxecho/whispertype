@@ -4,6 +4,7 @@
 и звучали одинаково во всех окнах.
 """
 
+import os
 import pathlib
 
 APP_NAME = "WhisperType"
@@ -17,6 +18,17 @@ ICON_PNG = ASSETS / "icon-512.png"
 ICON_ICNS = ASSETS / "AppIcon.icns"
 MENUBAR_IDLE = ASSETS / "menubar.png"
 MENUBAR_RECORDING = ASSETS / "menubar-rec.png"
+
+def pretty_path(path):
+    """Путь в том виде, в каком его показывают людям: ~/Library/… вместо /Users/имя/…"""
+    text = os.path.normpath(str(path))
+    home = os.path.normpath(str(pathlib.Path.home()))
+    if text == home:
+        return "~"
+    if text.startswith(home + os.sep):
+        return "~" + text[len(home):]
+    return text
+
 
 # --- подписи в меню -------------------------------------------------------
 
@@ -57,11 +69,12 @@ def msg_done(seconds, elapsed):
 
 def welcome_text(hotkey):
     return (
-        f"{TAGLINE}.\n\n"
-        f"1. Поставьте курсор туда, где хотите видеть текст.\n"
-        f"2. Нажмите {hotkey} — значок в строке меню станет красным.\n"
-        f"3. Говорите.\n"
-        f"4. Нажмите {hotkey} ещё раз — текст появится сам.\n\n"
+        f"{APP_NAME} — {TAGLINE[0].lower()}{TAGLINE[1:]}.\n\n"
+        "1. Поставьте курсор туда, где хотите видеть текст.\n"
+        f"2. {hotkey[0].upper()}{hotkey[1:]} — значок в строке меню "
+        "станет красным.\n"
+        "3. Говорите.\n"
+        "4. То же самое ещё раз — и текст появится сам.\n\n"
         "Передумали посреди фразы — нажмите Esc, запись просто исчезнет.\n\n"
         "Ваш голос никуда не отправляется: распознавание целиком происходит "
         "на этом маке, даже без интернета."
@@ -99,13 +112,13 @@ def no_access_text(app_path):
         "macOS отдельно разрешает программам нажимать клавиши. Откройте\n"
         "Системные настройки → Конфиденциальность и безопасность → "
         f"Универсальный доступ и включите там «{APP_NAME}».\n\n"
-        f"Если в списке его нет, нажмите «+» и выберите:\n{app_path}\n\n"
+        f"Если в списке его нет, нажмите «+» и выберите:\n{pretty_path(app_path)}\n\n"
         "Закрывать и перезапускать ничего не нужно — программа заметит "
         "разрешение сама за пару секунд."
     )
 
 
-def trouble_text(hotkey, has_access, mic_ok, model_ok, log_path):
+def trouble_text(hotkey, has_access, mic_ok, model_ok, log_path, log_button=True):
     def mark(ok):
         return "работает" if ok else "не работает"
 
@@ -142,5 +155,11 @@ def trouble_text(hotkey, has_access, mic_ok, model_ok, log_path):
             "в пункте «Горячая клавиша».",
             "",
         ]
-    lines.append(f"Подробности для разбирательства: {log_path}")
+    if log_button:
+        lines.append(
+            "Нужны подробности — кнопка «Показать журнал» ниже откроет "
+            f"{pretty_path(log_path)}"
+        )
+    else:
+        lines.append(f"Подробности пишутся в {pretty_path(log_path)}")
     return "\n".join(lines)

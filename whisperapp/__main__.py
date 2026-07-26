@@ -47,7 +47,7 @@ def cmd_doctor():
     print("\nРазрешения:")
     print(f"  {'✓' if has_access else '✗'} нажимать клавиши за вас")
     if not has_access:
-        print(f"    включите в Универсальном доступе: {parent_app_path()}")
+        print(f"    включите в Универсальном доступе: {b.pretty_path(parent_app_path())}")
 
     from .recorder import probe_microphone
 
@@ -76,7 +76,7 @@ def cmd_doctor():
 
     print(f"\nГорячая клавиша: {describe(cfg)}")
     print(f"Язык: {cfg.get('language') or 'определяется сам'}")
-    print(f"Журнал: {LOG_PATH}")
+    print(f"Журнал: {b.pretty_path(LOG_PATH)}")
     print("\nИтог:", "всё на месте" if ok else "есть проблемы, см. ✗ выше")
     return 0 if ok else 1
 

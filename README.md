@@ -149,10 +149,12 @@ After `brew upgrade python@3.x`, rebuild: `./install.sh`.
 | `tools/make_icons.py` | the whole identity, generated from code |
 
 Tests run without a microphone, keyboard or permissions — speech is
-synthesized with the system TTS voice, hotkey events are injected directly:
+synthesized with the system TTS voice, hotkey events are injected directly,
+and UI strings are checked for leaked absolute paths:
 
 ```bash
-.venv/bin/python test_hotkey.py && .venv/bin/python test_pipeline.py && .venv/bin/python test_streaming.py
+.venv/bin/python test_texts.py && .venv/bin/python test_hotkey.py && \
+  .venv/bin/python test_pipeline.py && .venv/bin/python test_streaming.py
 ```
 
 ### Engineering notes (learned the hard way)

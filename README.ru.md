@@ -129,12 +129,14 @@
 | `setup.py` | сборка `WhisperType.app` |
 
 Тесты — `test_hotkey.py` (распознавание клавиши, без клавиатуры и разрешений),
-`test_pipeline.py` (расшифровка синтезированной речи, без микрофона) и
+`test_pipeline.py` (расшифровка синтезированной речи, без микрофона),
 `test_streaming.py` (расшифровка кусками: корректность склейки, задержка хвоста,
-отсутствие потерь звука):
+отсутствие потерь звука) и `test_texts.py` (тексты окон: никаких путей вида
+`/Users/имя`, текст не обещает кнопок, которых нет):
 
 ```bash
-.venv/bin/python test_hotkey.py && .venv/bin/python test_pipeline.py && .venv/bin/python test_streaming.py
+.venv/bin/python test_texts.py && .venv/bin/python test_hotkey.py && \
+  .venv/bin/python test_pipeline.py && .venv/bin/python test_streaming.py
 ```
 
 ### Решения, которые стоит помнить
