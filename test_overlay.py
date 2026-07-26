@@ -9,6 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from whisperapp.recorder import LEVEL_FLOOR, normalized_level  # noqa: E402
 from whisperapp.overlay import (  # noqa: E402
     CAPTION_MAX_CHARS,
     GLOW_WIDTH_CALM,
@@ -57,6 +58,33 @@ check("цель достигается", abs(run(0.0, [0.5] * 200)[-1] - 0.5) < 
 
 check("громкая рамка заметно толще тихой", GLOW_WIDTH_LOUD > GLOW_WIDTH_CALM * 2)
 check("живой текст ограничен", CAPTION_MAX_CHARS <= 200)
+
+# --- нормировка громкости --------------------------------------------------
+# Живой микрофон не выдаёт пиков около единицы, поэтому индикатор считает
+# громкость относительно недавнего максимума.
+
+check("речь на своём максимуме даёт полный контур", normalized_level(0.25, 0.25) == 1.0)
+check(
+    "тихий микрофон тоже раскачивает контур",
+    normalized_level(0.06, 0.07) > 0.7,
+    f"{normalized_level(0.06, 0.07):.2f}",
+)
+check(
+    "громкий микрофон не зашкаливает",
+    normalized_level(0.9, 0.9) == 1.0,
+)
+check(
+    "пауза гасит контур",
+    normalized_level(0.01, 0.3) < 0.1,
+    f"{normalized_level(0.01, 0.3):.2f}",
+)
+check(
+    "тишина не раздувается до максимума",
+    normalized_level(0.002, LEVEL_FLOOR) < 0.15,
+    f"{normalized_level(0.002, LEVEL_FLOOR):.2f}",
+)
+check("порог не даёт делить на ноль", normalized_level(0.5, 0.0) == 1.0)
+check("отрицательный пик не ломает", normalized_level(-1.0, 0.2) == 0.0)
 
 print("\nПровалено:", fails or "ничего")
 sys.exit(1 if fails else 0)

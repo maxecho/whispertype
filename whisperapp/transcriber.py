@@ -161,7 +161,9 @@ class DictationSession:
     хвост — то есть ожидание почти не зависит от длины диктовки.
     """
 
-    CHUNK_SECONDS = 22          # копим столько, прежде чем отрезать кусок
+    FIRST_CHUNK_SECONDS = 8     # первый кусок режем рано: чтобы живой текст
+                                # появился через секунды, а не через полминуты
+    CHUNK_SECONDS = 20          # дальше копим больше — меньше швов в тексте
     SEARCH_SECONDS = 6          # в этом окне в конце куска ищем паузу для разреза
     PROMPT_TAIL_CHARS = 150     # сколько хвоста предыдущего текста дать модели
 
@@ -185,10 +187,13 @@ class DictationSession:
         """Вызывается по ходу записи со всем накопленным звуком."""
         if self._cancelled:
             return
-        chunk_len = int(self.CHUNK_SECONDS * SAMPLE_RATE)
-        while audio.size - self._consumed >= chunk_len:
+        while True:
+            seconds = self.FIRST_CHUNK_SECONDS if not self._futures else self.CHUNK_SECONDS
+            chunk_len = int(seconds * SAMPLE_RATE)
+            if audio.size - self._consumed < chunk_len:
+                break
             hi = self._consumed + chunk_len
-            lo = hi - int(self.SEARCH_SECONDS * SAMPLE_RATE)
+            lo = hi - int(min(self.SEARCH_SECONDS, seconds / 3) * SAMPLE_RATE)
             cut = quietest_split(audio, max(lo, self._consumed), hi)
             chunk = np.array(audio[self._consumed:cut])  # копия: буфер ещё растёт
             self._consumed = cut

@@ -10,6 +10,18 @@ log = logging.getLogger("recorder")
 
 SAMPLE_RATE = 16_000
 
+# Живой микрофон почти никогда не выдаёт пики около единицы: обычная речь это
+# 0.05–0.3 в зависимости от усиления. Поэтому громкость для индикатора считаем
+# относительно недавнего максимума — тогда контур реагирует на голос одинаково
+# и на встроенном микрофоне, и на гарнитуре.
+LEVEL_FLOOR = 0.035   # тише этого считаем тишиной и не раздуваем шум
+LEVEL_FORGET = 0.994  # за сколько забываем прежний максимум (на блок в 64 мс)
+
+
+def normalized_level(peak, reference, floor=LEVEL_FLOOR):
+    """Громкость 0..1 относительно недавнего максимума."""
+    return min(1.0, max(0.0, peak) / max(reference, floor))
+
 
 class Recorder:
     def __init__(self, device=None):
@@ -17,8 +29,10 @@ class Recorder:
         self._frames = []
         self._stream = None
         self._lock = threading.Lock()
-        self.level = 0.0  # текущая громкость 0..1, для индикатора
+        self.level = 0.0  # громкость 0..1 для индикатора, уже нормированная
+        self.peak = 0.0  # сырой пик последнего блока
         self.overflows = 0  # сколько раз система не успела отдать звук
+        self._reference = LEVEL_FLOOR  # недавний максимум
 
     @property
     def active(self):
@@ -33,8 +47,11 @@ class Recorder:
         peak = float(np.abs(block).max()) if block.size else 0.0
         with self._lock:
             self._frames.append(block)
-            # плавный спад, чтобы индикатор не дёргался
-            self.level = max(peak, self.level * 0.75)
+            self.peak = peak
+            # максимум забываем медленно: громкое слово поднимает планку,
+            # а тихая пауза не сбивает её мгновенно
+            self._reference = max(peak, self._reference * LEVEL_FORGET)
+            self.level = normalized_level(peak, self._reference)
 
     def snapshot(self):
         """Всё записанное на данный момент, не останавливая запись."""
@@ -50,6 +67,8 @@ class Recorder:
         with self._lock:
             self._frames = []
             self.level = 0.0
+            self.peak = 0.0
+            self._reference = LEVEL_FLOOR
             self.overflows = 0
         self._stream = sd.InputStream(
             samplerate=SAMPLE_RATE,
@@ -72,6 +91,7 @@ class Recorder:
         with self._lock:
             frames, self._frames = self._frames, []
             self.level = 0.0
+            self.peak = 0.0
         if not frames:
             return np.zeros(0, dtype=np.float32)
         return np.concatenate(frames, axis=0).reshape(-1).astype(np.float32)

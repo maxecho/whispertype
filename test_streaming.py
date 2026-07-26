@@ -108,6 +108,22 @@ print(f"  эталон,  первые 100: {reference[:100]}")
 print(f"  кусками, первые 100: {stitched[:100]}")
 
 check("куски реально резались", session.chunks_started >= 2, str(session.chunks_started))
+
+# первый кусок должен отрезаться рано, иначе живой текст не успевает появиться
+early = transcriber.start_session()
+for second in range(1, 13):
+    early.feed(recording[: second * SAMPLE_RATE])
+    if early.chunks_started:
+        break
+check(
+    "первый кусок готов на десятой секунде речи",
+    early.chunks_started >= 1 and second <= 10,
+    f"кусок отрезан на {second}-й секунде",
+)
+for future in list(early._futures):
+    future.result()
+check("и в нём уже есть текст", bool(early.text_so_far()), early.text_so_far()[:60])
+early.cancel()
 check("ожидание сократилось минимум вдвое", tail_s < whole_s / 2, f"{whole_s:.1f} → {tail_s:.1f} с")
 
 missing = words(reference) - words(stitched)
