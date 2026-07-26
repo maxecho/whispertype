@@ -4,6 +4,7 @@
     python -m whisperapp doctor       — проверить, всё ли на месте
     python -m whisperapp tapcheck     — убедиться, что нажатия доходят
     python -m whisperapp tapwatch [N] — N секунд показывать, что видит перехват
+    python -m whisperapp glowtest [N] — N секунд показывать подсветку с примером текста
     python -m whisperapp devices      — список микрофонов
     python -m whisperapp selftest [N] — записать N секунд и показать расшифровку
 
@@ -197,6 +198,54 @@ def cmd_tapwatch(seconds):
     return 0
 
 
+def cmd_glowtest(seconds):
+    """Показывает подсветку с игрушечным дыханием — посмотреть, как она выглядит."""
+    import logging
+    import math
+
+    from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
+    from PyObjCTools import AppHelper
+
+    from .overlay import ScreenGlow, is_available
+
+    watch = logging.getLogger("glowtest")
+    if not is_available():
+        watch.warning("Экранов не найдено")
+        return 1
+
+    app = NSApplication.sharedApplication()
+    app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
+
+    glow = ScreenGlow()
+    glow.show()
+    watch.info("Показываю подсветку %.0f секунд", seconds)
+
+    state = {"frame": 0}
+    phrases = [
+        "", "Привет,", "Привет, это", "Привет, это живой",
+        "Привет, это живой текст", "Привет, это живой текст по ходу диктовки",
+    ]
+    steps = int(seconds / 0.05)
+
+    def beat():
+        index = state["frame"]
+        state["frame"] += 1
+        if index >= steps:
+            glow.hide()
+            AppHelper.stopEventLoop()
+            return
+        # дыхание: две синусоиды, чтобы не выглядело механически
+        level = 0.35 + 0.4 * math.sin(index / 7.0) ** 2 + 0.2 * math.sin(index / 2.3) ** 2
+        glow.set_level(min(1.0, level))
+        glow.set_caption(phrases[min(index // max(1, steps // len(phrases)), len(phrases) - 1)])
+        AppHelper.callLater(0.05, beat)
+
+    AppHelper.callLater(0.05, beat)
+    AppHelper.runEventLoop()
+    watch.info("Подсветка отработала без ошибок")
+    return 0
+
+
 def cmd_selftest(seconds):
     import time
 
@@ -235,6 +284,8 @@ def main():
         return cmd_tapcheck()
     if command == "tapwatch":
         return cmd_tapwatch(float(argv[1]) if len(argv) > 1 else 20.0)
+    if command == "glowtest":
+        return cmd_glowtest(float(argv[1]) if len(argv) > 1 else 8.0)
     if command == "devices":
         cmd_devices()
         return 0

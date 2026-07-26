@@ -66,8 +66,11 @@ DEFAULT_KEY = "cmd_r"
 def describe(cfg):
     """Название клавиши так, как его прочитает человек."""
     hotkey = cfg["hotkey"]
+    name = HUMAN_NAMES.get(hotkey.get("key"), hotkey.get("key"))
     if hotkey["mode"] == "double_tap":
-        return f"двойное нажатие {HUMAN_NAMES.get(hotkey['key'], hotkey['key'])}"
+        return f"двойное нажатие {name}"
+    if hotkey["mode"] == "hold":
+        return f"удержание {name}"
     return "".join(
         _COMBO_GLYPHS.get(part, part.upper()) for part in hotkey["combo"].split("+")
     )
@@ -106,9 +109,12 @@ class HotkeyListener:
         self.mode = hotkey["mode"]
         self.window = float(hotkey["double_tap_window"])
         self.cancel_on_escape = bool(hotkey.get("cancel_on_escape", True))
+        # удержание короче порога — это обычное нажатие модификатора, не диктовка
+        self.hold_threshold = float(hotkey.get("hold_threshold", 0.35))
+        self.on_release = None  # ставит приложение: чем закончить удержание
 
         self.target = hotkey.get("key")
-        if self.mode == "double_tap" and self.target not in DEVICE_MASKS:
+        if self.mode in ("double_tap", "hold") and self.target not in DEVICE_MASKS:
             log.warning("Не знаю клавишу %r, беру ⌘ справа", self.target)
             self.target = DEFAULT_KEY
 
@@ -120,7 +126,8 @@ class HotkeyListener:
                 self.mode = "double_tap"
                 self.target = DEFAULT_KEY
 
-        # состояние детектора двойного нажатия
+        # состояние детектора
+        self._holding = False  # запись идёт по удержанию
         self._held = False
         self._press_at = 0.0
         self._last_tap_at = 0.0
@@ -185,6 +192,23 @@ class HotkeyListener:
     @property
     def alive(self):
         return self._tap is not None
+
+    def poll_hold(self):
+        """Проверяет, не пора ли начать запись по удержанию. Зовётся из таймера.
+
+        Отдельным опросом, а не по таймеру внутри перехвата: обработчик событий
+        обязан возвращать управление мгновенно, иначе система глушит перехват.
+        """
+        if self.mode != "hold" or self._holding or not self._held or self._series_broken:
+            return
+        if (self._clock() - self._press_at) < self.hold_threshold:
+            return
+        self._holding = True
+        self._fire()
+
+    @property
+    def holding(self):
+        return self._holding
 
     @property
     def muted(self):
@@ -251,6 +275,19 @@ class HotkeyListener:
                 log.exception("Ошибка в обработчике отмены")
             return
 
+        if self.mode == "hold":
+            if name == self.target:
+                if not self._held:
+                    self._held = True
+                    self._press_at = self._clock()
+            elif self._holding:
+                # начали печатать во время диктовки — не трогаем, это речь плюс руки
+                pass
+            else:
+                # клавишу используют как модификатор, а не как кнопку диктовки
+                self._series_broken = True
+            return
+
         if self.mode == "combo":
             if keycode is None:
                 keycode = KEYCODES.get(name)
@@ -270,6 +307,23 @@ class HotkeyListener:
             self._last_tap_at = 0.0
 
     def _key_up(self, name):
+        if self.mode == "hold":
+            if name != self.target:
+                return
+            self._held = False
+            broken, self._series_broken = self._series_broken, False
+            if self._holding:
+                self._holding = False
+                if self.on_release:
+                    try:
+                        self.on_release()
+                    except Exception:  # noqa: BLE001
+                        log.exception("Ошибка при завершении удержания")
+            elif not broken and (self._clock() - self._press_at) >= self.hold_threshold:
+                # порог перешли уже после отпускания — записывать нечего
+                log.debug("Удержание кончилось раньше, чем началась запись")
+            return
+
         if self.mode == "combo" or name != self.target:
             return
 

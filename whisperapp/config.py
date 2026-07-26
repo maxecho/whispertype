@@ -32,6 +32,9 @@ HOTKEY_PRESETS = [
     ("Двойное нажатие ⌃ слева", {"mode": "double_tap", "key": "ctrl_l"}),
     ("⌃⌥D", {"mode": "combo", "combo": "<ctrl>+<alt>+d"}),
     ("⌃⇧Пробел", {"mode": "combo", "combo": "<ctrl>+<shift>+<space>"}),
+    # удержание: говоришь, пока держишь — как рация
+    ("Удерживать ⌘ справа", {"mode": "hold", "key": "cmd_r"}),
+    ("Удерживать ⌥ справа", {"mode": "hold", "key": "alt_r"}),
 ]
 
 LANGUAGES = [("Русский", "ru"), ("English", "en"), ("Определять самому", None)]
@@ -42,6 +45,8 @@ DEFAULTS = {
         "key": "cmd_r",
         "combo": "<ctrl>+<alt>+d",
         "double_tap_window": 0.45,
+        # сколько держать клавишу в режиме «удерживать», прежде чем начнётся запись
+        "hold_threshold": 0.35,
         "cancel_on_escape": True,
     },
     # q4: по скорости равна полной, но в 3.5 раза меньше в памяти — на машинах
@@ -51,9 +56,16 @@ DEFAULTS = {
     "language": "ru",
     # Подсказка распознаванию: имена и термины, которые оно обычно путает.
     "initial_prompt": "",
+    # Словарь замен «как слышится» → «как писать». Надёжнее подсказки:
+    # срабатывает всегда, а не «модель, пожалуйста, учти».
+    "replacements": {},
     "max_seconds": 300,
     "min_seconds": 0.4,
     "sounds": True,
+    # рамка по краям экрана во время диктовки
+    "glow": True,
+    # показывать в рамке уже распознанный текст, не дожидаясь конца
+    "live_text": True,
     "insert": {
         # "paste" — вставлять сразу, "clipboard_only" — только копировать
         "mode": "paste",
@@ -112,7 +124,7 @@ def matching_preset(cfg):
     for label, preset in HOTKEY_PRESETS:
         if preset["mode"] != hotkey["mode"]:
             continue
-        field = "key" if preset["mode"] == "double_tap" else "combo"
+        field = "combo" if preset["mode"] == "combo" else "key"
         if preset[field] == hotkey.get(field):
             return label
     return None

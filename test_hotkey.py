@@ -149,5 +149,60 @@ check(
     "cmd_r",
 )
 
+# --- режим удержания -------------------------------------------------------
+
+hold_cfg = _merge(DEFAULTS, {"hotkey": {"mode": "hold", "key": "cmd_r"}})
+
+
+def make_hold():
+    clock = Clock()
+    started, stopped = [], []
+    listener = HotkeyListener(hold_cfg, lambda: started.append(1), clock=clock)
+    listener.on_release = lambda: stopped.append(1)
+    return listener, started, stopped, clock
+
+
+# короткое нажатие — это модификатор, не диктовка
+listener, started, stopped, clock = make_hold()
+listener._key_down("cmd_r"); clock.advance(0.1); listener.poll_hold()
+listener._key_up("cmd_r")
+check("короткое нажатие не начинает запись", (len(started), len(stopped)), (0, 0))
+
+# удержание дольше порога — запись, отпускание — конец
+listener, started, stopped, clock = make_hold()
+listener._key_down("cmd_r"); clock.advance(0.5); listener.poll_hold()
+check("удержание начинает запись", len(started), 1)
+listener._key_up("cmd_r")
+check("отпускание заканчивает запись", len(stopped), 1)
+
+# ⌘C во время удержания — это шорткат, а не диктовка
+listener, started, stopped, clock = make_hold()
+listener._key_down("cmd_r")
+listener._key_down("c", flags=0, keycode=8)
+clock.advance(0.5); listener.poll_hold()
+listener._key_up("cmd_r")
+check("⌘+буква не начинает запись", (len(started), len(stopped)), (0, 0))
+
+# опрос не должен запускать запись дважды
+listener, started, stopped, clock = make_hold()
+listener._key_down("cmd_r"); clock.advance(0.5)
+for _ in range(5):
+    listener.poll_hold()
+check("повторный опрос не дублирует", len(started), 1)
+
+# печать во время диктовки её не обрывает
+listener, started, stopped, clock = make_hold()
+listener._key_down("cmd_r"); clock.advance(0.5); listener.poll_hold()
+listener._key_down("a", flags=0, keycode=0)
+listener._key_up("cmd_r")
+check("печать во время диктовки не мешает", (len(started), len(stopped)), (1, 1))
+
+# другая клавиша удержания игнорируется
+listener, started, stopped, clock = make_hold()
+listener._key_down("cmd_l"); clock.advance(0.5); listener.poll_hold(); listener._key_up("cmd_l")
+check("левый ⌘ не запускает удержание", len(started), 0)
+
+check("подпись удержания", describe(hold_cfg), "удержание ⌘ справа")
+
 print("\nПровалено:", fails or "ничего")
 sys.exit(1 if fails else 0)

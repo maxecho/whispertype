@@ -86,10 +86,21 @@ Changed your mind mid-sentence? Press **Esc** — the recording is discarded.
 | wave + dots | transcribing |
 | wave + `!` | missing permission / something failed |
 
-Everything configurable lives in the menu: five hotkey presets (switched
-on the fly), language (Russian / English / auto-detect), auto-paste toggle,
-sounds, launch at login — plus built-in help and a self-diagnosing
-"something's wrong" dialog.
+While recording, a gradient frame glows around the screen edges, breathing with
+your voice — you can see you're being heard without looking away. Recognized
+text appears beneath it as you speak.
+
+Everything configurable lives in the menu:
+
+- **Hotkey** — seven presets, switched on the fly. Double-tap (toggle) or
+  hold-to-talk, walkie-talkie style.
+- **Replacement dictionary** — `heard = written`. The highest-leverage setting
+  if your speech is full of names and jargon; unlike a prompt hint, it always
+  fires, and it preserves sentence-initial capitalization.
+- **Recognition hint** — the same names as a soft prompt.
+- **Language**, **auto-paste**, **screen glow**, **live text**, **sounds**,
+  **launch at login** — plus built-in help and a self-diagnosing
+  "something's wrong" dialog.
 
 > **Note:** the app UI is currently Russian-only. Recognition itself handles
 > [90+ languages](https://github.com/openai/whisper#available-models-and-languages) —
@@ -156,6 +167,7 @@ After `brew upgrade python@3.x`, rebuild: `./install.sh`.
 | `whisperapp/transcriber.py` | MLX Whisper + hallucination filter + streaming chunker |
 | `whisperapp/inserter.py` | clipboard + synthetic ⌘V |
 | `whisperapp/app.py` | menu-bar UI and state machine |
+| `whisperapp/overlay.py` | screen-edge glow and live caption |
 | `whisperapp/autostart.py` | LaunchAgent |
 | `tools/make_icons.py` | the whole identity, generated from code |
 
@@ -164,8 +176,9 @@ synthesized with the system TTS voice, hotkey events are injected directly,
 and UI strings are checked for leaked absolute paths:
 
 ```bash
-.venv/bin/python test_texts.py && .venv/bin/python test_hotkey.py && \
-  .venv/bin/python test_pipeline.py && .venv/bin/python test_streaming.py
+for t in test_texts test_words test_hotkey test_pipeline test_streaming; do
+  .venv/bin/python $t.py || break
+done
 ```
 
 ### Engineering notes (learned the hard way)

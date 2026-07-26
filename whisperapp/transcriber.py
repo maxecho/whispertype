@@ -49,6 +49,7 @@ def clean(text, cfg):
     text = (text or "").strip()
     if cfg["cleanup"].get("collapse_whitespace", True):
         text = re.sub(r"\s+", " ", text)
+    text = apply_replacements(text, cfg.get("replacements"))
     if text.lower().strip(" .!?") in _HALLUCINATIONS or text.lower() in _HALLUCINATIONS:
         log.info("Отбросил галлюцинацию модели: %r", text)
         return ""
@@ -193,6 +194,10 @@ class DictationSession:
             self._consumed = cut
             self._futures.append(self._pool.submit(self._work, chunk))
 
+    def text_so_far(self):
+        """Что расшифровано на данный момент — для живого показа во время речи."""
+        return " ".join(self._texts).strip()
+
     def _work(self, chunk):
         if self._cancelled:
             return
@@ -215,3 +220,56 @@ class DictationSession:
     def cancel(self):
         self._cancelled = True
         self._pool.shutdown(wait=False, cancel_futures=True)
+
+
+def apply_replacements(text, replacements):
+    """Подставляет «как писать» вместо «как слышится».
+
+    Один проход общим выражением, а не замена за заменой: иначе результат
+    одной замены попадал бы под следующую («а→б», затем «б→в» давало «в»).
+    Длинные варианты стоят первыми — регулярное выражение выбирает первую
+    подходящую ветку, иначе «медиа план» перехватил бы короткий «план».
+    Регистр первой буквы сохраняется: услышанное в начале предложения слово
+    и заменится с заглавной.
+    """
+    if not replacements:
+        return text
+    lookup = {heard.lower(): written for heard, written in replacements.items() if heard.strip()}
+    if not lookup:
+        return text
+
+    pattern = re.compile(
+        "|".join(
+            rf"(?<!\w){re.escape(heard)}(?!\w)"
+            for heard in sorted(lookup, key=len, reverse=True)
+        ),
+        re.IGNORECASE,
+    )
+
+    def substitute(match):
+        found = match.group(0)
+        written = lookup.get(found.lower(), found)
+        if found[:1].isupper() and written[:1].islower():
+            return written[:1].upper() + written[1:]
+        return written
+
+    return pattern.sub(substitute, text)
+
+
+def parse_replacements(raw):
+    """Разбирает строки вида «слышится = пишется» в словарь."""
+    result = {}
+    for line in (raw or "").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        heard, written = line.split("=", 1)
+        heard, written = heard.strip(), written.strip()
+        if heard:
+            result[heard] = written
+    return result
+
+
+def format_replacements(replacements):
+    """Обратно в текст — то, что человек увидит в окне редактирования."""
+    return "\n".join(f"{heard} = {written}" for heard, written in sorted(replacements.items()))

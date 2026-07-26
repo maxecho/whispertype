@@ -34,8 +34,9 @@ from .inserter import (
     request_accessibility,
     request_input_monitoring,
 )
+from .overlay import ScreenGlow, is_available as glow_available
 from .recorder import SAMPLE_RATE, Recorder, probe_microphone
-from .transcriber import Transcriber
+from .transcriber import Transcriber, format_replacements, parse_replacements
 
 log = logging.getLogger("app")
 
@@ -116,9 +117,17 @@ class WhisperApp(rumps.App):
         self._listen_warned = False
         self._session = None
         self._last_feed = 0.0
+        # рамкой владеет только главный поток: запись стартует из потока
+        # перехвата, поэтому оттуда лишь поднимаем флаг, а показывает таймер
+        self._glow = ScreenGlow() if glow_available() else None
+        self._glow_wanted = False
+        # частый таймер держим выключенным: вхолостую он стоил бы вчетверо
+        # больше процессора, чем вся программа в простое
+        self._glow_timer = rumps.Timer(self.glow_tick, 0.05)
 
         self._build_menu()
         self.hotkeys = HotkeyListener(self.cfg, self.on_hotkey, self.on_escape)
+        self.hotkeys.on_release = self.on_hold_release
 
     # ------------------------------------------------------------------ меню
 
@@ -142,7 +151,11 @@ class WhisperApp(rumps.App):
             self.language_items[label] = (entry, code)
             self.item_language.add(entry)
 
+        self.item_words = rumps.MenuItem(b.MENU_WORDS, callback=self.menu_words)
+        self.item_prompt = rumps.MenuItem(b.MENU_PROMPT, callback=self.menu_prompt)
         self.item_paste = rumps.MenuItem(b.MENU_PASTE, callback=self.menu_paste)
+        self.item_glow = rumps.MenuItem(b.MENU_GLOW, callback=self.menu_glow)
+        self.item_live = rumps.MenuItem(b.MENU_LIVE, callback=self.menu_live)
         self.item_sounds = rumps.MenuItem(b.MENU_SOUNDS, callback=self.menu_sounds)
         self.item_autostart = rumps.MenuItem(b.MENU_AUTOSTART, callback=self.menu_autostart)
 
@@ -154,7 +167,11 @@ class WhisperApp(rumps.App):
             None,
             self.item_hotkey,
             self.item_language,
+            self.item_words,
+            self.item_prompt,
             self.item_paste,
+            self.item_glow,
+            self.item_live,
             self.item_sounds,
             self.item_autostart,
             None,
@@ -169,6 +186,9 @@ class WhisperApp(rumps.App):
     def _sync_checkmarks(self):
         self.item_paste.state = 1 if self.cfg["insert"]["mode"] == "paste" else 0
         self.item_sounds.state = 1 if self.cfg["sounds"] else 0
+        self.item_glow.state = 1 if self.cfg.get("glow", True) else 0
+        self.item_live.state = 1 if self.cfg.get("live_text", True) else 0
+        self.item_live.set_callback(self.menu_live if self.cfg.get("glow", True) else None)
         self.item_autostart.state = 1 if autostart.enabled() else 0
         for label, (entry, code) in self.language_items.items():
             entry.state = 1 if self.cfg.get("language") == code else 0
@@ -196,8 +216,21 @@ class WhisperApp(rumps.App):
 
     # --------------------------------------------------------------- запись
 
+    def on_hold_release(self):
+        """Клавишу отпустили — в режиме удержания это конец диктовки."""
+        with self._state_lock:
+            if self.state == RECORDING:
+                self._stop_recording()
+
     def on_hotkey(self):
         with self._state_lock:
+            if self.hotkeys.mode == "hold":
+                # удержание начинает запись; заканчивает её отпускание
+                if self.state in (IDLE, ERROR):
+                    self._start_recording()
+                elif self.state == LOADING:
+                    self._fail(b.STATUS_LOADING)
+                return
             if self.state == RECORDING:
                 self._stop_recording()
             elif self.state in (IDLE, ERROR):
@@ -212,6 +245,8 @@ class WhisperApp(rumps.App):
             if self.state != RECORDING:
                 return
             self.recorder.discard()
+            self._glow_wanted = False
+            self.hotkeys._holding = False
             if self._session is not None:
                 self._session.cancel()
                 self._session = None
@@ -231,6 +266,7 @@ class WhisperApp(rumps.App):
         self._session = self.transcriber.start_session() if self.transcriber.ready else None
         self._last_feed = 0.0
         self._rec_started = time.monotonic()
+        self._glow_wanted = True
         self._set_state(RECORDING)
         play(SOUND_START, self.cfg["sounds"])
 
@@ -249,6 +285,7 @@ class WhisperApp(rumps.App):
             self._session = None
 
     def _stop_recording(self):
+        self._glow_wanted = False
         audio = self.recorder.stop()
         session, self._session = self._session, None
         self._set_state(WORKING, b.STATUS_WORKING)
@@ -322,9 +359,53 @@ class WhisperApp(rumps.App):
         save_config(self.cfg)
         self._sync_checkmarks()
 
+    def _ask_text(self, title, hint, default, height=180):
+        """Окно с многострочным полем. Возвращает текст или None, если отменили."""
+        window = rumps.Window(
+            message=hint,
+            title=title,
+            default_text=default,
+            ok="Сохранить",
+            cancel="Отмена",
+            dimensions=(420, height),
+        )
+        window.icon = str(b.ICON_PNG)
+        response = window.run()
+        return response.text if response.clicked else None
+
+    def menu_words(self, _):
+        raw = self._ask_text(
+            b.MENU_WORDS, b.WORDS_HINT, format_replacements(self.cfg.get("replacements", {}))
+        )
+        if raw is None:
+            return
+        self.cfg["replacements"] = parse_replacements(raw)
+        save_config(self.cfg)
+        log.info("Словарь замен: %d записей", len(self.cfg["replacements"]))
+
+    def menu_prompt(self, _):
+        raw = self._ask_text(
+            b.MENU_PROMPT, b.PROMPT_HINT, self.cfg.get("initial_prompt", ""), height=120
+        )
+        if raw is None:
+            return
+        self.cfg["initial_prompt"] = raw.strip()
+        save_config(self.cfg)
+        log.info("Подсказка распознаванию: %d символов", len(self.cfg["initial_prompt"]))
+
     def menu_paste(self, _):
         mode = self.cfg["insert"]["mode"]
         self.cfg["insert"]["mode"] = "clipboard_only" if mode == "paste" else "paste"
+        save_config(self.cfg)
+        self._sync_checkmarks()
+
+    def menu_glow(self, _):
+        self.cfg["glow"] = not self.cfg.get("glow", True)
+        save_config(self.cfg)
+        self._sync_checkmarks()
+
+    def menu_live(self, _):
+        self.cfg["live_text"] = not self.cfg.get("live_text", True)
         save_config(self.cfg)
         self._sync_checkmarks()
 
@@ -453,6 +534,7 @@ class WhisperApp(rumps.App):
         except Exception:  # noqa: BLE001
             log.debug("Старый слушатель не остановился", exc_info=True)
         self.hotkeys = HotkeyListener(self.cfg, self.on_hotkey, self.on_escape)
+        self.hotkeys.on_release = self.on_hold_release
         self.hotkeys.start()
         self._muted = False
         self._muted_warned = False
@@ -472,7 +554,39 @@ class WhisperApp(rumps.App):
         healthy = self._ax_ok and self._listen_ok and not self._muted
         return b.MENUBAR_IDLE, True, "" if healthy else " !"
 
+    def glow_tick(self, _):
+        """Двадцать раз в секунду — только пока идёт запись, иначе сразу выходим."""
+        glow = self._glow
+        if glow is None:
+            return
+        wanted = self._glow_wanted and self.cfg.get("glow", True)
+        if wanted != glow.visible:
+            try:
+                glow.show() if wanted else glow.hide()
+            except Exception:  # noqa: BLE001
+                log.exception("Подсветка сломалась — выключаю её")
+                self._glow = None
+                return
+        if not wanted:
+            return
+        glow.set_level(self.recorder.level)
+        if self.cfg.get("live_text", True) and self._session is not None:
+            glow.set_caption(self._session.text_so_far())
+
+    def _sync_glow_timer(self):
+        """Гоняем частый таймер только пока идёт запись."""
+        if self._glow is None:
+            return
+        wanted = self._glow_wanted and self.cfg.get("glow", True)
+        if wanted and not self._glow_timer._status:
+            self._glow_timer.start()
+        elif not wanted and self._glow_timer._status:
+            self._glow_timer.stop()
+            self.glow_tick(None)  # последний вызов уберёт рамку с экрана
+
     def tick(self, _):
+        self.hotkeys.poll_hold()
+        self._sync_glow_timer()
         self._poll_permissions()
 
         look = self._look()
