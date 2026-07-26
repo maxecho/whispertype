@@ -1,6 +1,7 @@
 """WhisperType — значок в строке меню и вся логика «нажал → сказал → появился текст»."""
 
 import logging
+import os
 import subprocess
 import threading
 import time
@@ -21,11 +22,17 @@ from .config import (
 )
 from .hotkey import HotkeyListener, describe
 from .inserter import (
+    DENIED,
+    GRANTED,
     SETTINGS_URL,
+    SETTINGS_URL_INPUT,
     accessibility_ok,
+    input_monitoring_ok,
+    input_monitoring_state,
     insert_text,
     parent_app_path,
     request_accessibility,
+    request_input_monitoring,
 )
 from .recorder import SAMPLE_RATE, Recorder, probe_microphone
 from .transcriber import Transcriber
@@ -51,6 +58,24 @@ def play(path, enabled=True):
         )
     except Exception:  # noqa: BLE001
         log.debug("Не смог проиграть звук %s", path, exc_info=True)
+
+
+def already_running():
+    """Уже есть живая копия программы?
+
+    Пригождается, когда launchd поднимает программу при входе, а человек тем
+    временем открывает её из Finder. Полагаться на LSMultipleInstancesProhibited
+    нельзя: launchd запускает исполняемый файл мимо LaunchServices.
+    """
+    try:
+        from AppKit import NSRunningApplication
+
+        others = NSRunningApplication.runningApplicationsWithBundleIdentifier_(b.BUNDLE_ID)
+        mine = os.getpid()
+        return any(app.processIdentifier() != mine for app in (others or []))
+    except Exception:  # noqa: BLE001
+        log.debug("Не смог проверить, запущена ли копия", exc_info=True)
+        return False
 
 
 def open_path(path):
@@ -85,6 +110,10 @@ class WhisperApp(rumps.App):
         self._ax_ok = accessibility_ok()
         self._last_ax_check = 0.0
         self._last_look = None
+        self._muted = False
+        self._muted_warned = False
+        self._listen_ok = input_monitoring_ok()
+        self._listen_warned = False
         self._session = None
         self._last_feed = 0.0
 
@@ -326,7 +355,12 @@ class WhisperApp(rumps.App):
             LOG_PATH,
             # без разрешения кнопки журнала в диалоге нет — не обещаем её в тексте
             log_button=has_access,
+            stale_access=self.hotkeys.muted and self._listen_ok,
+            can_listen=self._listen_ok,
         )
+        if not self._listen_ok:
+            self._ask_input_monitoring()
+            return
         if not has_access:
             if self._alert(b.MENU_TROUBLE, message, ok="Открыть настройки", cancel="Закрыть"):
                 request_accessibility()
@@ -353,11 +387,51 @@ class WhisperApp(rumps.App):
         ):
             open_path(SETTINGS_URL)
 
+    def _ask_input_monitoring(self):
+        # системное окно покажется только если разрешение ещё не спрашивали;
+        # если его уже запретили, остаётся отправить человека в настройки
+        request_input_monitoring()
+        if self._alert(
+            b.STATUS_NO_LISTEN,
+            b.no_listen_text(parent_app_path()),
+            ok="Открыть настройки",
+            cancel="Позже",
+        ):
+            open_path(SETTINGS_URL_INPUT)
+
     def _poll_permissions(self):
         now = time.monotonic()
         if now - self._last_ax_check < 2.0:
             return
         self._last_ax_check = now
+
+        listen_ok = input_monitoring_ok()
+        if listen_ok != self._listen_ok:
+            self._listen_ok = listen_ok
+            self._menu_dirty = True
+            if listen_ok:
+                # разрешение только что выдали — старый перехват уже мёртв
+                log.info("Мониторинг ввода разрешён, поднимаю перехват заново")
+                self._restart_hotkeys()
+                if self.state == IDLE:
+                    self._set_state(IDLE, b.STATUS_READY)
+
+        muted = self.hotkeys.muted
+        if muted != self._muted:
+            self._muted = muted
+            self._menu_dirty = True
+        if muted and not self._listen_ok:
+            muted = False  # причина известна и объясняется отдельным окном
+        if muted and not self._muted_warned:
+            self._muted_warned = True
+            log.warning("Разрешение устарело: система глушит перехват нажатий")
+            if self._alert(
+                b.STATUS_STALE_ACCESS,
+                b.stale_access_text(),
+                ok="Открыть настройки",
+                cancel="Позже",
+            ):
+                open_path(SETTINGS_URL)
         granted = accessibility_ok()
         if granted == self._ax_ok:
             return
@@ -380,6 +454,8 @@ class WhisperApp(rumps.App):
             log.debug("Старый слушатель не остановился", exc_info=True)
         self.hotkeys = HotkeyListener(self.cfg, self.on_hotkey, self.on_escape)
         self.hotkeys.start()
+        self._muted = False
+        self._muted_warned = False
 
     # ------------------------------------------------------------------ вид
 
@@ -393,7 +469,8 @@ class WhisperApp(rumps.App):
             return b.MENUBAR_IDLE, True, f" {WORKING_FRAMES[self._frame]}"
         if self.state == ERROR:
             return b.MENUBAR_IDLE, True, " !"
-        return b.MENUBAR_IDLE, True, "" if self._ax_ok else " !"
+        healthy = self._ax_ok and self._listen_ok and not self._muted
+        return b.MENUBAR_IDLE, True, "" if healthy else " !"
 
     def tick(self, _):
         self._poll_permissions()
@@ -431,8 +508,13 @@ class WhisperApp(rumps.App):
 
     def _refresh_menu(self):
         self.item_toggle.title = b.MENU_STOP if self.state == RECORDING else b.MENU_START
-        if not self._ax_ok:
-            self.item_status.title = b.STATUS_NO_ACCESS
+        if not self._listen_ok or not self._ax_ok or self._muted:
+            if not self._listen_ok:
+                self.item_status.title = b.STATUS_NO_LISTEN
+            elif not self._ax_ok:
+                self.item_status.title = b.STATUS_NO_ACCESS
+            else:
+                self.item_status.title = b.STATUS_STALE_ACCESS
             self.item_status.set_callback(self.menu_trouble)
         else:
             self.item_status.set_callback(None)
@@ -479,15 +561,21 @@ class WhisperApp(rumps.App):
             )
         if not self._ax_ok:
             self._ask_accessibility()
+        if not self._listen_ok and not self._listen_warned:
+            self._listen_warned = True
+            self._ask_input_monitoring()
 
     def run(self):
         # живём только в строке меню, без значка в Dock
         NSApplication.sharedApplication().setActivationPolicy_(
             NSApplicationActivationPolicyAccessory
         )
+        listen = input_monitoring_state()
         log.info(
-            "%s %s запускается. Разрешение нажимать клавиши: %s",
-            b.APP_NAME, b.VERSION, "есть" if self._ax_ok else "нет",
+            "%s %s запускается. Нажимать клавиши: %s. Слышать нажатия: %s",
+            b.APP_NAME, b.VERSION,
+            "есть" if self._ax_ok else "нет",
+            {GRANTED: "есть", DENIED: "ЗАПРЕЩЕНО"}.get(listen, "ещё не спрашивали"),
         )
         threading.Thread(target=self._warmup, daemon=True).start()
         self.hotkeys.start()
@@ -497,4 +585,7 @@ class WhisperApp(rumps.App):
 
 
 def main():
+    if already_running():
+        log.info("Копия уже работает — вторую не запускаю")
+        return
     WhisperApp().run()

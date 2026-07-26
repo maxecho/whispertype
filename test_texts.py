@@ -50,15 +50,19 @@ texts = {
     "help": b.help_text("двойное нажатие ⌘ справа"),
     "about": b.about_text(),
     "no_access": b.no_access_text(f"{HOME}/Applications/WhisperType.app"),
+    "no_listen": b.no_listen_text(f"{HOME}/Applications/WhisperType.app"),
 }
+texts["stale_access"] = b.stale_access_text()
 for access in (True, False):
     for mic in (True, False):
         for model in (True, False):
-            key = f"trouble(access={access},mic={mic},model={model})"
-            texts[key] = b.trouble_text(
-                "двойное нажатие ⌘ справа", access, mic, model, LOG_PATH,
-                log_button=access,
-            )
+            for stale in (True, False):
+                for listen in (True, False):
+                    key = f"trouble({access},{mic},{model},stale={stale},listen={listen})"
+                    texts[key] = b.trouble_text(
+                        "двойное нажатие ⌘ справа", access, mic, model, LOG_PATH,
+                        log_button=access, stale_access=stale, can_listen=listen,
+                    )
 
 leaky = [name for name, text in texts.items() if re.search(r"/Users/|" + re.escape(HOME), text)]
 check("ни в одном окне нет личного пути", not leaky, ", ".join(leaky) or "проверено окон: %d" % len(texts))
@@ -68,6 +72,20 @@ check("ни в одном окне нет личного пути", not leaky, "
 with_button = b.trouble_text("x", True, True, True, LOG_PATH, log_button=True)
 without_button = b.trouble_text("x", False, True, True, LOG_PATH, log_button=False)
 check("с кнопкой — упоминаем её", "Показать журнал" in with_button)
+
+stale = b.trouble_text("x", True, True, True, LOG_PATH, log_button=True, stale_access=True)
+check("устаревшее разрешение объясняется", "выключите" in stale and "включите обратно" in stale)
+check("и не выдаётся за исправное", "Разрешение печатать за вас: работает" not in stale)
+
+no_listen = b.trouble_text("x", True, True, True, LOG_PATH, can_listen=False)
+check("нет мониторинга ввода — это главная причина", "не видит нажатий" in no_listen)
+check("и ведём в нужную панель", "Мониторинг ввода" in no_listen)
+check(
+    "два разрешения не путаются",
+    "Мониторинг ввода" in b.no_listen_text("/x")
+    and "Универсальный доступ" in b.no_access_text("/x")
+    and "Универсальный доступ" not in b.no_listen_text("/x"),
+)
 check("без кнопки — не упоминаем", "Показать журнал" not in without_button)
 check("путь к журналу есть в обоих", all("~/Library/Logs" in t for t in (with_button, without_button)))
 

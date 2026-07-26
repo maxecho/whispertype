@@ -66,17 +66,42 @@ PY
 say "Рисую иконки"
 "$VENV/bin/python" "$HERE/tools/make_icons.py"
 
-say "Собираю WhisperType.app"
-rm -rf "$HERE/build" "$HERE/dist"
-(cd "$HERE" && "$VENV/bin/python" setup.py py2app -A >/dev/null)
+# Бандл — тонкая обёртка: код лежит рядом, в исходниках, и подхватывается при
+# запуске. Поэтому пересобираем только когда меняется сама обёртка (версия,
+# иконка, Info.plist). Это не оптимизация, а необходимость: у пересобранного
+# бандла другая подпись, и macOS перестаёт доверять уже выданному разрешению
+# «Универсальный доступ» — его пришлось бы включать заново после каждой правки.
+NEED_BUNDLE=1
+if [[ -d "$APP" ]]; then
+  INSTALLED_VERSION="$(defaults read "$APP/Contents/Info" CFBundleShortVersionString 2>/dev/null || echo "")"
+  INSTALLED_ID="$(defaults read "$APP/Contents/Info" CFBundleIdentifier 2>/dev/null || echo "")"
+  WANT_VERSION="$("$VENV/bin/python" -c "
+import sys; sys.path.insert(0, '$HERE')
+from whisperapp import branding; print(branding.VERSION)
+")"
+  if [[ "$INSTALLED_VERSION" == "$WANT_VERSION" && "$INSTALLED_ID" == "$LABEL" ]]; then
+    NEED_BUNDLE=0
+  fi
+fi
 
-# Закрываем предыдущую копию, иначе новая не встанет поверх работающей.
+# Работающую копию в любом случае закрываем — код обновится при следующем старте.
 launchctl bootout "gui/$UID/$LABEL" 2>/dev/null || true
 pkill -f "$APP/Contents/MacOS/WhisperType" 2>/dev/null || true
 sleep 1
-rm -rf "$APP"
-ditto "$HERE/dist/WhisperType.app" "$APP"
-echo "  $APP"
+
+if [[ "$NEED_BUNDLE" == "1" ]]; then
+  say "Собираю WhisperType.app"
+  rm -rf "$HERE/build" "$HERE/dist"
+  (cd "$HERE" && "$VENV/bin/python" setup.py py2app -A >/dev/null)
+  rm -rf "$APP"
+  ditto "$HERE/dist/WhisperType.app" "$APP"
+  echo "  $APP"
+  REGRANT=1
+else
+  say "Приложение на месте, пересборка не нужна"
+  echo "  разрешения сохранятся"
+  REGRANT=0
+fi
 
 # Уборка после старого имени (до v1.1 приложение называлось Whisper).
 # Чужой Whisper.app не трогаем — проверяем, что это именно наш bundle id.
@@ -116,9 +141,22 @@ cat <<EOF
 
   Готово. Значок звуковой волны — в правой части строки меню.
 
-  Осталось один раз разрешить WhisperType нажимать клавиши за вас.
-  Программа сама покажет окно и откроет нужную панель настроек:
-  включите там «WhisperType». Перезапускать ничего не придётся.
+$(if [[ "$REGRANT" == "1" ]]; then cat <<'REG'
+  Осталось выдать два разрешения — macOS держит их раздельно:
+
+    1. Мониторинг ввода — чтобы программа замечала горячую клавишу.
+    2. Универсальный доступ — чтобы она вставляла текст за вас.
+
+  Программа сама покажет окна и откроет нужные панели настроек;
+  включите в обеих «WhisperType». Перезапускать ничего не придётся.
+
+  Если программа уже стояла и была в списке — macOS могла запомнить
+  прежнюю версию: выключите галочку и включите обратно.
+REG
+else cat <<'REG'
+  Разрешения не тронуты — приложение осталось прежним, обновился только код.
+REG
+fi)
 
   Как пользоваться:
     • поставьте курсор в поле ввода

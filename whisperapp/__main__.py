@@ -3,6 +3,7 @@
     python -m whisperapp              — запустить программу
     python -m whisperapp doctor       — проверить, всё ли на месте
     python -m whisperapp tapcheck     — убедиться, что нажатия доходят
+    python -m whisperapp tapwatch [N] — N секунд показывать, что видит перехват
     python -m whisperapp devices      — список микрофонов
     python -m whisperapp selftest [N] — записать N секунд и показать расшифровку
 
@@ -42,10 +43,16 @@ def cmd_doctor():
 
     from .inserter import accessibility_ok, parent_app_path
 
+    from .inserter import input_monitoring_state, GRANTED, DENIED
+
     has_access = accessibility_ok()
-    ok = ok and has_access
+    listen = input_monitoring_state()
+    ok = ok and has_access and listen == GRANTED
     print("\nРазрешения:")
-    print(f"  {'✓' if has_access else '✗'} нажимать клавиши за вас")
+    print(f"  {'✓' if has_access else '✗'} нажимать клавиши за вас (Универсальный доступ)")
+    listen_mark = {GRANTED: "✓", DENIED: "✗"}.get(listen, "?")
+    listen_word = {GRANTED: "есть", DENIED: "запрещено"}.get(listen, "ещё не спрашивали")
+    print(f"  {listen_mark} слышать нажатия (Мониторинг ввода): {listen_word}")
     if not has_access:
         print(f"    включите в Универсальном доступе: {b.pretty_path(parent_app_path())}")
 
@@ -124,10 +131,70 @@ def cmd_tapcheck():
     if fired:
         result = f"✓ Нажатия доходят, сработало раз: {len(fired)}"
     else:
-        result = f"✗ Перехват включён, но не сработал. Событий получено: {listener.events_seen}"
+        names = {
+            int(Quartz.kCGEventKeyDown): "нажатие клавиши",
+            int(Quartz.kCGEventFlagsChanged): "модификатор",
+            int(Quartz.kCGEventTapDisabledByTimeout): "СИСТЕМА ОТКЛЮЧИЛА (таймаут)",
+            int(Quartz.kCGEventTapDisabledByUserInput): "СИСТЕМА ОТКЛЮЧИЛА (ввод)",
+        }
+        detail = ", ".join(
+            f"{names.get(t, t)}×{n}" for t, n in sorted(listener.event_types.items())
+        ) or "ничего"
+        result = (
+            f"✗ Перехват включён, но не сработал. Событий: {listener.events_seen} ({detail})"
+        )
     print(result)
     logging.getLogger("tapcheck").info(result)
     return 0 if fired else 1
+
+
+def cmd_tapwatch(seconds):
+    """Живая проверка: N секунд смотрим, какие нажатия доходят до программы.
+
+    В отличие от tapcheck ничего не подделываем — нужны настоящие нажатия
+    человека, зато и результат честный.
+    """
+    import logging
+    import time
+
+    from .hotkey import BY_KEYCODE, HotkeyListener, describe
+
+    cfg = load_config()
+    fired = []
+    listener = HotkeyListener(cfg, lambda: fired.append(time.monotonic()))
+    listener.start()
+
+    watch = logging.getLogger("tapwatch")
+    if not listener.alive:
+        watch.warning("✗ Перехват не включился — нет разрешения нажимать клавиши")
+        return 1
+
+    target = cfg["hotkey"].get("key")
+    watch.info("Смотрю %.0f секунд. Нажмите %s", seconds, describe(cfg))
+    seen = {}
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        time.sleep(0.25)
+        for code, count in list(listener.event_types.items()):
+            seen[code] = count
+    listener.stop()
+
+    watch.info(
+        "Итог: событий %d (настоящих %d), система глушила %d раз, сработало %d раз",
+        listener.events_seen, listener.real_events,
+        listener.disabled_count, len(fired),
+    )
+    if listener.real_events == 0:
+        watch.warning("✗ До программы не дошло ни одного нажатия — разрешение не работает")
+        return 1
+    if not fired:
+        watch.warning(
+            "✗ Нажатия доходят, но %s не распозналось. Клавиша: %s",
+            describe(cfg), target,
+        )
+        return 1
+    watch.info("✓ Всё работает")
+    return 0
 
 
 def cmd_selftest(seconds):
@@ -166,6 +233,8 @@ def main():
         return cmd_doctor()
     if command == "tapcheck":
         return cmd_tapcheck()
+    if command == "tapwatch":
+        return cmd_tapwatch(float(argv[1]) if len(argv) > 1 else 20.0)
     if command == "devices":
         cmd_devices()
         return 0

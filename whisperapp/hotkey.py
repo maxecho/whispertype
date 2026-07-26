@@ -129,7 +129,10 @@ class HotkeyListener:
         self._tap = None
         self._runloop = None
         self._thread = None
-        self.events_seen = 0  # для диагностики: доходят ли события вообще
+        self.events_seen = 0     # для диагностики: доходят ли события вообще
+        self.event_types = {}    # какие именно типы событий пришли
+        self.disabled_count = 0  # сколько раз система глушила перехват
+        self.real_events = 0     # настоящие нажатия, а не служебные уведомления
 
     # ------------------------------------------------------------ запуск
 
@@ -162,8 +165,10 @@ class HotkeyListener:
             source = Quartz.CFMachPortCreateRunLoopSource(None, tap, 0)
             self._runloop = Quartz.CFRunLoopGetCurrent()
             Quartz.CFRunLoopAddSource(self._runloop, source, Quartz.kCFRunLoopCommonModes)
-            Quartz.CGEventTapEnable(tap, True)
+            # запоминаем до включения: система может заглушить перехват сразу же,
+            # и обработчику уже понадобится ссылка, чтобы включить его обратно
             self._tap = tap
+            Quartz.CGEventTapEnable(tap, True)
         finally:
             ready.set()
         if self._tap is not None:
@@ -181,20 +186,37 @@ class HotkeyListener:
     def alive(self):
         return self._tap is not None
 
+    @property
+    def muted(self):
+        """Перехват создан, но система его глушит и настоящих нажатий нет.
+
+        Так проявляется устаревшее разрешение: после замены приложения macOS
+        показывает галочку включённой, AXIsProcessTrusted отвечает «да», но
+        события до нас не доходят. Лечится выключением и включением галочки.
+        """
+        return self.alive and self.disabled_count > 0 and self.real_events == 0
+
     # ------------------------------------------------------------ события
 
     def _on_event(self, proxy, event_type, event, refcon):
         self.events_seen += 1
+        self.event_types[int(event_type)] = self.event_types.get(int(event_type), 0) + 1
         try:
             if event_type in (
                 Quartz.kCGEventTapDisabledByTimeout,
                 Quartz.kCGEventTapDisabledByUserInput,
             ):
                 # система иногда отключает перехват сама — включаем обратно
+                self.disabled_count += 1
+                log.warning(
+                    "Система отключила перехват (%s раз) — включаю заново",
+                    self.disabled_count,
+                )
                 if self._tap is not None:
                     Quartz.CGEventTapEnable(self._tap, True)
                 return event
 
+            self.real_events += 1
             keycode = Quartz.CGEventGetIntegerValueField(
                 event, Quartz.kCGKeyboardEventKeycode
             )

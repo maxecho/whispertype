@@ -51,6 +51,8 @@ STATUS_LOADING = "Просыпаюсь…"
 STATUS_RECORDING = "Слушаю"
 STATUS_WORKING = "Разбираю сказанное…"
 STATUS_NO_ACCESS = "Нет разрешения печатать за вас"
+STATUS_NO_LISTEN = "Нет разрешения слышать нажатия"
+STATUS_STALE_ACCESS = "Разрешение нужно переключить заново"
 STATUS_NOTHING_YET = "Вы ещё ничего не диктовали"
 
 # --- сообщения о результате ----------------------------------------------
@@ -118,18 +120,60 @@ def no_access_text(app_path):
     )
 
 
-def trouble_text(hotkey, has_access, mic_ok, model_ok, log_path, log_button=True):
+def no_listen_text(app_path):
+    return (
+        f"{APP_NAME} не слышит горячую клавишу.\n\n"
+        "macOS выдаёт два отдельных разрешения: одно — печатать за вас, "
+        "другое — замечать нажатия клавиш. Первое уже есть, нужно второе.\n\n"
+        "Системные настройки → Конфиденциальность и безопасность → "
+        f"Мониторинг ввода → включите «{APP_NAME}».\n\n"
+        f"Если в списке его нет, нажмите «+» и выберите:\n{pretty_path(app_path)}\n\n"
+        "Перезапускать ничего не нужно."
+    )
+
+
+def stale_access_text():
+    return (
+        f"Похоже, macOS помнит старую версию {APP_NAME} и глушит нажатия.\n\n"
+        "Так бывает после обновления программы: галочка в настройках стоит, "
+        "но система ей больше не верит.\n\n"
+        "Лечится за десять секунд:\n"
+        "Системные настройки → Конфиденциальность и безопасность → "
+        f"Универсальный доступ → выключите «{APP_NAME}» и включите обратно.\n\n"
+        "Если не помогло — выделите строку, нажмите «−», затем «+» и добавьте\n"
+        "/Applications/WhisperType.app"
+    )
+
+
+def trouble_text(hotkey, has_access, mic_ok, model_ok, log_path, log_button=True,
+                 stale_access=False, can_listen=True):
     def mark(ok):
         return "работает" if ok else "не работает"
 
+    access_note = "работает"
+    if not has_access:
+        access_note = "не работает"
+    elif stale_access:
+        access_note = "числится, но система его глушит"
+
     lines = [
         f"Горячая клавиша: {hotkey}",
-        f"Разрешение печатать за вас: {mark(has_access)}",
+        f"Разрешение слышать нажатия: {mark(can_listen)}",
+        f"Разрешение печатать за вас: {access_note}",
         f"Микрофон: {mark(mic_ok)}",
         f"Распознавание: {mark(model_ok)}",
         "",
     ]
-    if not has_access:
+    if not can_listen:
+        lines += [
+            "Главное, что мешает — программа не видит нажатий.",
+            "Системные настройки → Конфиденциальность и безопасность → "
+            f"Мониторинг ввода → включите «{APP_NAME}».",
+            "",
+        ]
+    elif stale_access and has_access:
+        lines += [stale_access_text().split("\n\n", 1)[1], ""]
+    elif not has_access:
         lines += [
             "Главное, что мешает — нет разрешения на нажатие клавиш.",
             "Нажмите «Открыть настройки» ниже и включите там "

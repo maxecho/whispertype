@@ -54,10 +54,21 @@ cd whispertype
 The script builds `WhisperType.app`, puts it into /Applications, downloads the
 model and enables launch-at-login. First run takes a few minutes.
 
-macOS will ask for two one-time permissions, and the app walks you through
-both: **Accessibility** (to catch the hotkey and type for you) and
-**Microphone**. No restarts needed — the app picks the permission up within
-seconds of you granting it.
+### Permissions
+
+macOS keeps these separate, and WhisperType needs all three. The app detects
+what's missing, explains it, and opens the right settings pane — no restart
+required, it notices the moment you flip a switch.
+
+| Permission | Why |
+|---|---|
+| **Input Monitoring** | to notice your hotkey |
+| **Accessibility** | to paste the text for you |
+| **Microphone** | to hear you |
+
+The first two are easy to confuse — they sound alike and live in the same
+settings screen. If the hotkey does nothing while the menu item "Начать
+диктовку" works fine, it's **Input Monitoring** that's missing.
 
 ## Use
 
@@ -170,6 +181,13 @@ audio is cut at the quietest 200 ms stretch of the last few seconds (so words
 are never split), transcribed in a background thread, and the next chunk
 receives the tail of the previous text as a prompt for continuity. After you
 stop, only the tail remains.
+
+**Listening to keys and pressing keys are two different permissions.**
+`AXIsProcessTrusted()` only covers the latter. Since macOS 10.15 a keyboard
+event tap additionally requires Input Monitoring, checked through
+`IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)` in IOKit. Miss it and you get
+the worst possible failure mode: the app reports full permissions, pastes text
+happily, and stays deaf to the hotkey. Both are checked at startup and logged.
 
 **Don't try windows shorter than 30 s.** The tempting optimization — slicing
 the encoder's positional embeddings to the actual clip length instead of

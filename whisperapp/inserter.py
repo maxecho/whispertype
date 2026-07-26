@@ -123,3 +123,52 @@ def insert_text(text, cfg):
 
         threading.Thread(target=restore, daemon=True).start()
     return True
+
+
+# --- мониторинг ввода -----------------------------------------------------
+# Слушать клавиатуру и нажимать за пользователя — это ДВА разных разрешения.
+# Универсальный доступ (выше) даёт право нажимать; чтобы получать чужие
+# нажатия, с macOS 10.15 нужен ещё «Мониторинг ввода». Проверяется он не через
+# AX, а через IOKit, поэтому AXIsProcessTrusted может отвечать «да», пока
+# перехват молчит.
+
+SETTINGS_URL_INPUT = (
+    "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
+)
+
+_LISTEN_EVENT = 1  # kIOHIDRequestTypeListenEvent
+GRANTED, DENIED, UNKNOWN = 0, 1, 2  # значения IOHIDCheckAccess
+
+
+def _iokit():
+    import ctypes
+    import ctypes.util
+
+    lib = ctypes.CDLL(ctypes.util.find_library("IOKit"))
+    lib.IOHIDCheckAccess.restype = ctypes.c_int
+    lib.IOHIDCheckAccess.argtypes = [ctypes.c_uint32]
+    lib.IOHIDRequestAccess.restype = ctypes.c_bool
+    lib.IOHIDRequestAccess.argtypes = [ctypes.c_uint32]
+    return lib
+
+
+def input_monitoring_state():
+    """GRANTED / DENIED / UNKNOWN — разрешено ли слушать клавиатуру."""
+    try:
+        return int(_iokit().IOHIDCheckAccess(_LISTEN_EVENT))
+    except Exception:  # noqa: BLE001
+        log.debug("IOHIDCheckAccess недоступен", exc_info=True)
+        return UNKNOWN
+
+
+def input_monitoring_ok():
+    return input_monitoring_state() == GRANTED
+
+
+def request_input_monitoring():
+    """Показывает системный запрос «Мониторинг ввода» (только если ещё не спрашивали)."""
+    try:
+        return bool(_iokit().IOHIDRequestAccess(_LISTEN_EVENT))
+    except Exception:  # noqa: BLE001
+        log.exception("Не смог запросить мониторинг ввода")
+        return False
